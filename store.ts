@@ -126,17 +126,24 @@ export const useStore = create<AppState>()(
       managerBriefing: null,
 
       checkConnection: async () => {
-        if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Supabase Offline' });
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+          set({ isSupabaseConnected: false, connectionError: 'Faltam chaves na Vercel' });
           return;
         }
+        
+        if (!supabase) {
+          set({ isSupabaseConnected: false, connectionError: 'Erro no Client Supabase' });
+          return;
+        }
+
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
-          const connected = !error || (error && error.message !== 'Failed to fetch');
-          set({ isSupabaseConnected: !!connected, connectionError: error ? error.message : null });
-          if (connected && !get().isDemoMode) get().syncData();
+          if (error) throw error;
+          
+          set({ isSupabaseConnected: true, connectionError: null });
+          if (!get().isDemoMode) get().syncData();
         } catch (err: any) {
-          set({ isSupabaseConnected: false, connectionError: err.message });
+          set({ isSupabaseConnected: false, connectionError: 'Sem sinal do Banco' });
         }
       },
 
@@ -159,14 +166,13 @@ export const useStore = create<AppState>()(
           currentUser: demoUser, 
           users: DEMO_STAFF_USERS, 
           isDemoMode: true, 
-          isSupabaseConnected: false,
-          connectionError: 'Modo Demo Ativo'
+          connectionError: get().isSupabaseConnected ? null : 'Modo Demo (Local)'
         });
       },
 
       syncData: async () => {
         if (!supabase || get().isDemoMode) return;
-        // Sync data implementation...
+        // Sync logic...
       },
 
       generateAIBriefing: async () => {
@@ -269,10 +275,7 @@ export const useStore = create<AppState>()(
       createTask: async (data) => {
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
-        
-        // Seleciona o template de checklist correto
         const template = CHECKLIST_TEMPLATES[data.roomId!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        
         const initialChecklist = template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {});
 
         if (!get().isDemoMode && supabase) {
@@ -360,7 +363,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v64-areas-fixed',
+      name: 'hospedapro-v65-conn-fixed',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

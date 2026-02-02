@@ -3,12 +3,15 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { 
   Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 
-  CheckCircle2, Bed, Users, Cloud, Clock, ShieldAlert, Zap
+  CheckCircle2, Bed, Users, Cloud, Clock, ShieldAlert, Zap, AlertCircle
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {
-  const { currentUser, updateCurrentUser, updateUserPassword, logout, rooms, guests, isSupabaseConnected, isDemoMode, cloudAvailableAgain } = useStore();
+  const { 
+    currentUser, updateCurrentUser, updateUserPassword, logout, rooms, 
+    guests, isSupabaseConnected, isDemoMode, cloudAvailableAgain, connectionError 
+  } = useStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -127,11 +130,15 @@ const Header: React.FC = () => {
              )}
 
              <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all ${
-               isSupabaseConnected ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+               isSupabaseConnected 
+                ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                : connectionError === 'Faltam chaves na Vercel' 
+                  ? 'bg-rose-50 text-rose-600 border-rose-100' 
+                  : 'bg-amber-50 text-amber-600 border-amber-100'
              }`}>
-               {isSupabaseConnected ? <Cloud size={14} /> : <CheckCircle2 size={12} />}
+               {isSupabaseConnected ? <Cloud size={14} /> : <AlertCircle size={14} />}
                <span className="text-[10px] font-black uppercase tracking-widest">
-                 {isSupabaseConnected ? 'Nuvem OK' : 'Local Persist'}
+                 {isSupabaseConnected ? 'Nuvem OK' : connectionError || 'Local Persist'}
                </span>
              </div>
           </div>

@@ -52,22 +52,24 @@ const GuestManagement: React.FC = () => {
     reader.onloadend = async () => {
       try {
         const base64Data = (reader.result as string).split(',')[1];
+        // Create a new GoogleGenAI instance right before making an API call to ensure fresh configuration
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
+        // Following Google GenAI SDK best practices for contents structure and response handling
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
-          contents: [
-            {
-              parts: [
-                { inlineData: { data: base64Data, mimeType: file.type } },
-                { text: "Analise este documento de identidade (RG, CNH ou Passaporte) e extraia o NOME COMPLETO e o NÚMERO DO DOCUMENTO. Retorne apenas um JSON puro com as chaves: 'fullName' e 'documentNumber'." }
-              ]
-            }
-          ],
+          contents: {
+            parts: [
+              { inlineData: { data: base64Data, mimeType: file.type } },
+              { text: "Analise este documento de identidade (RG, CNH ou Passaporte) e extraia o NOME COMPLETO e o NÚMERO DO DOCUMENTO. Retorne apenas um JSON puro com as chaves: 'fullName' e 'documentNumber'." }
+            ]
+          },
           config: { responseMimeType: "application/json" }
         });
 
-        const result = JSON.parse(response.text || '{}');
+        // Use response.text directly as a property, not a function
+        const textOutput = response.text;
+        const result = JSON.parse(textOutput || '{}');
         setFormData(prev => ({
           ...prev,
           fullName: result.fullName || prev.fullName,

@@ -9,9 +9,18 @@ import {
 } from './types';
 import { CLEANING_CHECKLIST_TEMPLATE } from './constants';
 
-// Força a leitura das variáveis de ambiente injetadas pelo Vite define ou process.env
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
+// Tenta obter as chaves de múltiplos lugares para garantir que o bundle as encontre
+const getEnv = (key: string) => {
+  try {
+    // @ts-ignore
+    return process.env[key] || import.meta.env[`VITE_${key}`] || import.meta.env[key] || '';
+  } catch {
+    return '';
+  }
+};
+
+const SUPABASE_URL = getEnv('SUPABASE_URL');
+const SUPABASE_KEY = getEnv('SUPABASE_ANON_KEY');
 
 export const supabase = SUPABASE_URL && SUPABASE_KEY 
   ? createClient(SUPABASE_URL, SUPABASE_KEY) 
@@ -88,17 +97,20 @@ export const useStore = create<AppState>()(
 
       checkConnection: async () => {
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Supabase não configurado. Verifique as chaves VITE_ na Vercel.' });
+          set({ 
+            isSupabaseConnected: false, 
+            connectionError: 'Configuração do banco de dados não encontrada no celular.' 
+          });
           return;
         }
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
-          // Consideramos conectado se houver resposta do servidor, mesmo erro de permissão (RLS)
-          const isHealthy = !error || (error && error.code !== 'PGRST301' && error.message !== 'Failed to fetch');
-          set({ isSupabaseConnected: !!isHealthy, connectionError: error ? error.message : null });
-          if (isHealthy) get().syncData();
+          // Se não for erro de rede/fetch, consideramos que o servidor está vivo
+          const connected = !error || (error && error.message !== 'Failed to fetch');
+          set({ isSupabaseConnected: !!connected, connectionError: error ? error.message : null });
+          if (connected) get().syncData();
         } catch (err: any) {
-          set({ isSupabaseConnected: false, connectionError: err.message });
+          set({ isSupabaseConnected: false, connectionError: 'Erro de conexão: ' + err.message });
         }
       },
 
@@ -244,7 +256,6 @@ export const useStore = create<AppState>()(
       },
 
       syncICal: async (roomId) => {
-        // Implementação futura de sync externa
         get().syncData();
       },
 
@@ -344,7 +355,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v40-stable',
+      name: 'hospedapro-v45-mobile-fix',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

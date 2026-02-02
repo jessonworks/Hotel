@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect } from 'react';
-import { useStore } from '../../store';
+import { useStore, supabase } from '../../store';
 import { UserRole } from '../../types';
-import { Hotel, Mail, Lock, AlertCircle, Loader2, RefreshCw, WifiOff } from 'lucide-react';
+import { Hotel, Mail, Lock, AlertCircle, Loader2, RefreshCw, WifiOff, Database } from 'lucide-react';
 
 const Login: React.FC = () => {
   const { login, isSupabaseConnected, checkConnection, connectionError } = useStore();
@@ -55,14 +55,21 @@ const Login: React.FC = () => {
               Servidor Desconectado
             </div>
             <p className="text-[10px] text-amber-600 font-bold leading-relaxed">
-              {connectionError || "Não foi possível alcançar o banco de dados. Se este é o primeiro acesso, faça um 'Redeploy' na Vercel para carregar as chaves."}
+              {connectionError || "Não foi possível alcançar o banco de dados. Verifique se o Supabase não está em manutenção ou se o sinal do celular está bom."}
             </p>
-            <button 
-              onClick={() => checkConnection()}
-              className="w-full py-2 bg-amber-600 text-white text-[10px] font-black rounded-xl flex items-center justify-center gap-2 hover:bg-amber-700 transition-all"
-            >
-              <RefreshCw size={12} /> TENTAR RECONECTAR
-            </button>
+            <div className="flex flex-col gap-2">
+              <button 
+                onClick={() => checkConnection()}
+                className="w-full py-2 bg-amber-600 text-white text-[10px] font-black rounded-xl flex items-center justify-center gap-2 hover:bg-amber-700 transition-all"
+              >
+                <RefreshCw size={12} /> TENTAR RECONECTAR
+              </button>
+              {!supabase && (
+                <div className="flex items-center justify-center gap-2 text-[8px] text-rose-500 font-black uppercase">
+                  <Database size={10} /> Chaves VITE_ não detectadas no bundle
+                </div>
+              )}
+            </div>
           </div>
         )}
 

@@ -209,6 +209,19 @@ const GuestManagement: React.FC = () => {
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Diária (R$)</label>
+                  <input required type="number" placeholder="150" value={formData.dailyRate} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" onChange={e => setFormData({...formData, dailyRate: parseFloat(e.target.value)})} />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Pagamento</label>
+                  <select className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value as PaymentMethod})}>
+                    {Object.values(PaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Entrada</label>
                   <input required type="date" className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={formData.checkIn} onChange={e => setFormData({...formData, checkIn: e.target.value})} />
                 </div>

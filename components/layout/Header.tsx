@@ -1,5 +1,6 @@
 
 import React, { useRef, useState, useEffect } from 'react';
+
 import { useStore } from '../../store';
 import { 
   Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 

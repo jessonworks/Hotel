@@ -1,7 +1,7 @@
 
 import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { Bell, Search, User, Camera, X, Mail, UserCircle, LogOut, ChevronRight, Settings, Shield, Lock, CheckCircle2, Bed, Users, CloudCheck } from 'lucide-react';
+import { Bell, Search, Camera, X, Mail, LogOut, ChevronRight, Lock, CheckCircle2, Bed, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {

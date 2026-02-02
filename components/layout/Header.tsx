@@ -1,15 +1,14 @@
 
 import React, { useRef, useState, useEffect } from 'react';
-
 import { useStore } from '../../store';
 import { 
   Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 
-  CheckCircle2, Bed, Users 
+  CheckCircle2, Bed, Users, Cloud, CloudOff
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {
-  const { currentUser, updateCurrentUser, updateUserPassword, logout, rooms, guests } = useStore();
+  const { currentUser, updateCurrentUser, updateUserPassword, logout, rooms, guests, isSupabaseConnected } = useStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -66,7 +65,7 @@ const Header: React.FC = () => {
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Buscar quarto ou hóspede..." 
-              className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg w-full focus:ring-2 focus:ring-blue-500 transition-all text-sm"
+              className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg w-full focus:ring-2 focus:ring-blue-500 transition-all text-sm font-bold"
             />
             
             {/* Search Results Dropdown */}
@@ -99,9 +98,13 @@ const Header: React.FC = () => {
           </div>
           
           {/* Status Indicator */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-emerald-50 text-emerald-600 rounded-full border border-emerald-100 animate-pulse">
-            <CheckCircle2 size={12} />
-            <span className="text-[10px] font-black uppercase tracking-widest">Sincronizado Local</span>
+          <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all animate-pulse ${
+            isSupabaseConnected ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+          }`}>
+            {isSupabaseConnected ? <Cloud size={14} /> : <CheckCircle2 size={12} />}
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              {isSupabaseConnected ? 'Supabase Online' : 'Sincronizado Local'}
+            </span>
           </div>
         </div>
 

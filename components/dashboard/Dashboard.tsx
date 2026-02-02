@@ -8,6 +8,8 @@ import {
   TrendingUp,
   MessageSquare,
   Send,
+  CheckCircle2,
+  ClipboardList
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -26,37 +28,32 @@ const Dashboard: React.FC = () => {
 
   const isStaff = currentUser?.role === UserRole.STAFF;
   
-  // Cálculo de DRE: Receitas totais vs Despesas operacionais (estoque)
+  // Dados Financeiros (Admin)
   const totalIncome = transactions.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
   const realProfit = totalIncome - totalExpense;
 
-  const stats = [
-    { 
-      label: isStaff ? 'Minhas Tarefas' : 'Ocupação', 
-      value: isStaff ? tasks.filter(t => t.status === CleaningStatus.PENDENTE && t.assignedTo === currentUser?.id).length : rooms.filter(r => r.status === RoomStatus.OCUPADO).length, 
-      icon: <Bed />, 
-      color: 'bg-blue-600' 
-    },
-    { 
-      label: 'Aprovação Pendente', 
-      value: tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO).length, 
-      icon: <Clock />, 
-      color: 'bg-amber-500' 
-    },
-    { 
-      label: 'Lucro Operacional', 
-      value: `R$ ${realProfit.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`, 
-      icon: <TrendingUp />, 
-      color: 'bg-emerald-500' 
-    },
-    { 
-      label: 'Itens Críticos', 
-      value: inventory.filter(i => i.quantity <= i.minStock).length, 
-      icon: <AlertCircle />, 
-      color: 'bg-rose-500' 
-    },
+  // Produtividade (Staff/Geral)
+  const myTasks = tasks.filter(t => t.assignedTo === currentUser?.id);
+  const tasksToDo = myTasks.filter(t => t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO).length;
+  const tasksDoneToday = myTasks.filter(t => t.status === CleaningStatus.APROVADO).length;
+  const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO).length;
+
+  const adminStats = [
+    { label: 'Ocupação Atual', value: `${rooms.filter(r => r.status === RoomStatus.OCUPADO).length} Unid`, icon: <Bed />, color: 'bg-blue-600' },
+    { label: 'Auditorias Pendentes', value: pendingAudits, icon: <Clock />, color: 'bg-amber-500' },
+    { label: 'Lucro do Mês', value: `R$ ${realProfit.toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`, icon: <TrendingUp />, color: 'bg-emerald-500' },
+    { label: 'Aviso Importante', value: announcements.length, icon: <AlertCircle />, color: 'bg-rose-500' },
   ];
+
+  const staffStats = [
+    { label: 'Minhas Atribuições', value: myTasks.length, icon: <ClipboardList />, color: 'bg-blue-600' },
+    { label: 'Auditorias Pendentes', value: myTasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO).length, icon: <Clock />, color: 'bg-amber-500' },
+    { label: 'Tarefas pra fazer', value: tasksToDo, icon: <AlertCircle />, color: 'bg-rose-600' },
+    { label: 'Tarefas concluídas', value: tasksDoneToday, icon: <CheckCircle2 />, color: 'bg-emerald-500' },
+  ];
+
+  const stats = isStaff ? staffStats : adminStats;
 
   const chartData = [
     { name: 'Seg', ocupacao: 65 }, { name: 'Ter', ocupacao: 58 }, { name: 'Qua', ocupacao: 72 }, 
@@ -72,26 +69,28 @@ const Dashboard: React.FC = () => {
   return (
     <div className="space-y-8 animate-in fade-in duration-500 pb-12">
       <header>
-        <h1 className="text-4xl font-black text-slate-900 tracking-tight">HospedaPro Executive</h1>
-        <p className="text-slate-500 font-medium">Bem-vindo, {currentUser?.fullName}. Acompanhe sua operação em tempo real.</p>
+        <h1 className="text-4xl font-black text-slate-900 tracking-tight">HospedaPro</h1>
+        <p className="text-slate-500 font-medium font-sans">
+          {isStaff ? `Olá, ${currentUser?.fullName}. Foco na qualidade e produtividade!` : `Painel de Gestão - Unidade Lapa.`}
+        </p>
       </header>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6">
         {stats.map((stat, i) => (
-          <div key={i} className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm hover:shadow-xl transition-all group active:scale-95">
-            <div className={`${stat.color} w-14 h-14 rounded-2xl flex items-center justify-center text-white mb-6 shadow-lg group-hover:rotate-6 transition-transform`}>
-              {React.cloneElement(stat.icon as React.ReactElement<any>, { size: 28 })}
+          <div key={i} className="bg-white p-6 md:p-8 rounded-[2rem] border border-slate-200 shadow-sm transition-all group active:scale-95">
+            <div className={`${stat.color} w-10 h-10 md:w-14 md:h-14 rounded-xl md:rounded-2xl flex items-center justify-center text-white mb-4 md:mb-6 shadow-lg`}>
+              {React.cloneElement(stat.icon as React.ReactElement<any>, { size: 24 })}
             </div>
-            <p className="text-slate-400 text-[10px] font-black uppercase tracking-widest">{stat.label}</p>
-            <p className="text-3xl font-black text-slate-900 mt-1">{stat.value}</p>
+            <p className="text-slate-400 text-[9px] md:text-[10px] font-black uppercase tracking-widest leading-none">{stat.label}</p>
+            <p className="text-xl md:text-3xl font-black text-slate-900 mt-2">{stat.value}</p>
           </div>
         ))}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-8">
-          <div className="bg-white p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
-            <h3 className="font-black text-xl text-slate-900 mb-8">Performance da Unidade</h3>
+          <div className="bg-white p-6 md:p-10 rounded-[2.5rem] border border-slate-200 shadow-sm">
+            <h3 className="font-black text-xl text-slate-900 mb-8">{isStaff ? 'Minha Performance' : 'Ocupação Semanal'}</h3>
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chartData}>
@@ -109,7 +108,7 @@ const Dashboard: React.FC = () => {
         <div className="bg-white p-8 rounded-[2.5rem] border border-slate-200 shadow-sm flex flex-col h-[550px]">
           <div className="flex items-center gap-3 mb-8">
             <MessageSquare className="text-blue-600" size={24} />
-            <h3 className="font-black text-xl">Comunicados Internos</h3>
+            <h3 className="font-black text-xl">Mural Interno</h3>
           </div>
           <div className="flex-1 overflow-y-auto space-y-4 mb-6 pr-2 custom-scrollbar">
             {announcements.map(msg => (
@@ -122,11 +121,11 @@ const Dashboard: React.FC = () => {
               </div>
             ))}
           </div>
-          {currentUser?.role !== UserRole.STAFF && (
+          {!isStaff && (
             <div className="relative mt-auto">
               <textarea 
                 value={newMsg} onChange={e => setNewMsg(e.target.value)}
-                placeholder="Enviar novo comunicado..."
+                placeholder="Enviar comunicado..."
                 className="w-full p-5 pr-14 bg-slate-50 border-none rounded-[1.8rem] text-sm font-bold focus:ring-2 focus:ring-blue-500 resize-none h-28"
               />
               <button onClick={handleSendAnnouncement} className="absolute right-4 bottom-4 p-4 bg-blue-600 text-white rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-600/20 active:scale-90"><Send size={20} /></button>

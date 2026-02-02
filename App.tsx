@@ -22,6 +22,9 @@ const App: React.FC = () => {
     return <Login />;
   }
 
+  const isAdmin = currentUser.role === UserRole.ADMIN;
+  const isManager = currentUser.role === UserRole.MANAGER || isAdmin;
+
   return (
     <HashRouter>
       <div className="flex h-screen overflow-hidden">
@@ -31,13 +34,20 @@ const App: React.FC = () => {
           <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
             <Routes>
               <Route path="/" element={<Dashboard />} />
-              <Route path="/rooms" element={<RoomList />} />
+              
+              {/* Rotas restritas para Manager/Admin */}
+              <Route path="/rooms" element={isManager ? <RoomList /> : <Navigate to="/" />} />
+              <Route path="/guests" element={isManager ? <GuestManagement /> : <Navigate to="/" />} />
+              <Route path="/inventory" element={isManager ? <InventoryDashboard /> : <Navigate to="/" />} />
+              <Route path="/team" element={isManager ? <TeamManagement /> : <Navigate to="/" />} />
+              
+              {/* Rota restrita exclusiva para Admin */}
+              <Route path="/financial" element={isAdmin ? <FinancialDashboard /> : <Navigate to="/" />} />
+              
+              {/* Rotas acessíveis por Staff */}
               <Route path="/cleaning" element={<CleaningTasks />} />
-              <Route path="/guests" element={<GuestManagement />} />
               <Route path="/laundry" element={<LaundryKanban />} />
-              <Route path="/inventory" element={<InventoryDashboard />} />
-              <Route path="/team" element={<TeamManagement />} />
-              <Route path="/financial" element={<FinancialDashboard />} />
+              
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

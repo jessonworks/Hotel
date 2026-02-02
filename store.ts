@@ -1,12 +1,21 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
+import { createClient } from '@supabase/supabase-js';
 import { 
   User, UserRole, Room, RoomStatus, RoomType, RoomCategory,
   CleaningTask, CleaningStatus, LaundryItem, LaundryStage,
   Guest, InventoryItem, Announcement, Transaction
 } from './types';
 import { CLEANING_CHECKLIST_TEMPLATE } from './constants';
+
+const SUPABASE_URL = process.env.SUPABASE_URL || '';
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
+
+// Inicializa o cliente Supabase
+export const supabase = SUPABASE_URL && SUPABASE_KEY 
+  ? createClient(SUPABASE_URL, SUPABASE_KEY) 
+  : null;
 
 interface AppState {
   currentUser: User | null;
@@ -18,6 +27,7 @@ interface AppState {
   inventory: InventoryItem[];
   announcements: Announcement[];
   transactions: Transaction[];
+  isSupabaseConnected: boolean;
   
   login: (email: string, password?: string) => boolean;
   quickLogin: (role: UserRole) => void;
@@ -49,9 +59,16 @@ const generateInitialRooms = (): Room[] => {
     id: n, number: n, floor: 1, type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
     status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: false
   }));
-  const common = [{ id: 'REC', n: 'Recepção' }, { id: 'COZ', n: 'Cozinha' }];
-  common.forEach(c => rooms.push({
-    id: c.id, number: c.n, floor: 1, type: RoomType.AREA, category: RoomCategory.COMMON_AREA,
+  ['201', '202', '203', '204', '205'].forEach(n => rooms.push({
+    id: n, number: n, floor: 2, type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
+    status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: true
+  }));
+  ['301', '302', '303', '304', '305', '306'].forEach(n => rooms.push({
+    id: n, number: n, floor: 3, type: RoomType.SUITE, category: RoomCategory.GUEST_ROOM,
+    status: RoomStatus.DISPONIVEL, maxGuests: 4, bedsCount: 3, hasMinibar: true, hasBalcony: true
+  }));
+  [{ id: 'REC', n: 'Recepção' }, { id: 'COZ', n: 'Cozinha' }, { id: 'LAJ', n: 'Laje/Terraço' }].forEach(c => rooms.push({
+    id: c.id, number: c.n, floor: 0, type: RoomType.AREA, category: RoomCategory.COMMON_AREA,
     status: RoomStatus.DISPONIVEL, maxGuests: 0, bedsCount: 0, hasMinibar: false, hasBalcony: false
   }));
   return rooms;
@@ -73,11 +90,12 @@ export const useStore = create<AppState>()(
       laundry: [],
       guests: [],
       inventory: [],
-      announcements: [{ id: 'a1', authorName: 'Sistema', content: 'HospedaPro Online!', priority: 'normal', createdAt: new Date().toISOString() }],
+      announcements: [{ id: 'a1', authorName: 'Sistema', content: 'Bem-vindo ao HospedaPro!', priority: 'normal', createdAt: new Date().toISOString() }],
       transactions: [],
+      isSupabaseConnected: !!supabase,
 
       login: (email, password) => {
-        const user = get().users.find(u => u.email === email && u.password === password);
+        const user = get().users.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
         if (user) { set({ currentUser: user }); return true; }
         return false;
       },
@@ -139,7 +157,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-storage-vfinal',
+      name: 'hospedapro-v8-final-sync',
       storage: createJSONStorage(() => localStorage),
     }
   )

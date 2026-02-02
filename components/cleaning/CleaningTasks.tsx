@@ -18,10 +18,13 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
-  // Filtro de tarefas: STAFF vê o que lhe foi designado. GERENTE vê tudo pendente + Auditorias.
+  // FILTRO INTELIGENTE:
+  // Se for STAFF (Karine), ela só vê o que o gerente designou para o ID dela (u2).
+  // Ela NÃO vê as áreas comuns "soltas" a menos que você as envie para ela.
   const myTasks = tasks.filter(t => {
     const isAssignedToMe = t.assignedTo === currentUser?.id;
     const isPendingOrActive = t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
+    
     if (isAdminOrManager) return isPendingOrActive;
     return isAssignedToMe && isPendingOrActive;
   });
@@ -84,7 +87,7 @@ const CleaningTasks: React.FC = () => {
       fatorMamaeVerified: true
     });
     
-    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Aguardando Auditoria ✅`;
+    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Auditoria Pendente ✅`;
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
     
     setActiveTaskId(null);
@@ -97,7 +100,7 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-10">
-          {/* PAINEL DE AUDITORIA (GERENTE) */}
+          {/* PAINEL DE AUDITORIA (SÓ APARECE PARA GERENTE) */}
           {isAdminOrManager && pendingAudits.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center gap-3 px-2">
@@ -115,15 +118,15 @@ const CleaningTasks: React.FC = () => {
                             {tr?.number}
                           </div>
                           <div>
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Equipe: {task.assignedByName}</p>
-                            <p className="text-sm font-bold text-slate-700">Tempo de execução: {task.durationMinutes} min</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Executado por: {task.assignedByName}</p>
+                            <p className="text-sm font-bold text-slate-700">Tempo: {task.durationMinutes} min</p>
                           </div>
                         </div>
                         <button 
                           onClick={() => approveTask(task.id)}
                           className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
                         >
-                          <CheckCircle2 size={18} /> APROVAR E LIBERAR QUARTO
+                          <CheckCircle2 size={18} /> APROVAR E LIBERAR
                         </button>
                       </div>
                       <div className="mt-6 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
@@ -145,14 +148,14 @@ const CleaningTasks: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Faxinas Designadas</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tarefas ativas para você</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Apenas tarefas enviadas pela gerência</p>
               </div>
             </header>
 
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Hotel em ordem!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa pendente agora.</p>
+                <p className="text-slate-900 font-black text-lg">Hotel em dia!</p>
+                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa designada para você no momento.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -167,7 +170,7 @@ const CleaningTasks: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-[10px] uppercase">PRAZO: {task.deadline || 'IMEDIATO'}</p>
+                          <p className="text-rose-500 font-black text-[10px] uppercase">PRAZO: {task.deadline || 'Urgente'}</p>
                         </div>
                       </div>
                       <button 

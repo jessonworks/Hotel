@@ -27,7 +27,7 @@ const RoomList: React.FC = () => {
   const isManagerOrAdmin = currentUser?.role === UserRole.MANAGER || currentUser?.role === UserRole.ADMIN;
 
   const handleAssignTask = () => {
-    if (!assigningRoomId) return;
+    if (!assignmentData.staffId || !assigningRoomId) return;
     createTask({ 
       roomId: assigningRoomId, 
       assignedTo: assignmentData.staffId, 
@@ -62,13 +62,13 @@ const RoomList: React.FC = () => {
           <p className="text-slate-500 font-medium">Controle em tempo real do inventário.</p>
         </div>
         {isManagerOrAdmin && (
-          <button onClick={() => rooms.forEach(r => r.icalUrl && syncICal(r.id))} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 shadow-xl shadow-emerald-600/20 transition-all">
+          <button onClick={() => rooms.forEach(r => r.icalUrl && syncICal(r.id))} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 shadow-xl transition-all">
             <RefreshCw size={18} /> Sync Reservas
           </button>
         )}
       </div>
 
-      {/* FILTROS RESTAURADOS */}
+      {/* BARRA DE FILTROS RESTAURADA */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[1.5rem] border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 border-r border-slate-100 pr-5">
           <Filter size={16} className="text-slate-400" />
@@ -110,6 +110,7 @@ const RoomList: React.FC = () => {
         ))}
       </div>
 
+      {/* MODAL DE GESTÃO - RESTAURADO COM TODAS AS FUNÇÕES */}
       {activeMenuRoomId && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom-10">
@@ -168,7 +169,7 @@ const RoomList: React.FC = () => {
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Responsável</label>
                    <select value={assignmentData.staffId} onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold">
-                      <option value="">Selecione funcionário...</option>
+                      <option value="">Selecione...</option>
                       {staffMembers.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
                    </select>
                 </div>
@@ -182,7 +183,7 @@ const RoomList: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL ICAL / AIRBNB RESTAURADO */}
+      {/* MODAL ICAL RESTAURADO */}
       {icalRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">

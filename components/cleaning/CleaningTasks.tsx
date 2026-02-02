@@ -15,18 +15,22 @@ const CleaningTasks: React.FC = () => {
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
-  const activeTask = tasks.find(t => t.id === activeTaskId);
-  const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
-
-  // STAFF: Só vê o que foi designado para o SEU ID específico
+  
+  // STAFF: Só enxerga tarefas que foram REALMENTE designadas para o seu ID
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // GERENTE: Vê tarefas para auditar e tarefas que estão em andamento pela equipe
+  // GERENTE: Monitora auditorias pendentes e o progresso da equipe
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
-  const teamActiveTasks = tasks.filter(t => t.status === CleaningStatus.EM_PROGRESSO && t.assignedTo !== currentUser?.id);
+  const teamActiveTasks = tasks.filter(t => 
+    (t.status === CleaningStatus.EM_PROGRESSO || t.status === CleaningStatus.PENDENTE) && 
+    t.assignedTo !== currentUser?.id
+  );
+
+  const activeTask = tasks.find(t => t.id === activeTaskId);
+  const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
   useEffect(() => {
     let interval: any;
@@ -99,14 +103,14 @@ const CleaningTasks: React.FC = () => {
       {!activeTask ? (
         <div className="space-y-10">
           
-          {/* VISÃO DO GERENTE: AUDITORIA E MONITORAMENTO */}
+          {/* PAINEL DO GERENTE: AUDITORIA E MONITORAMENTO */}
           {isAdminOrManager && (
             <>
               {pendingAudits.length > 0 && (
                 <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
                     <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><ShieldCheck size={20} /></div>
-                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Aguardando Sua Aprovação</h2>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Solicitações de Aprovação</h2>
                   </div>
                   <div className="grid gap-4">
                     {pendingAudits.map(task => {
@@ -120,21 +124,19 @@ const CleaningTasks: React.FC = () => {
                               </div>
                               <div>
                                 <p className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><UserIcon size={12}/> {task.assignedByName}</p>
-                                <p className="text-sm font-bold text-slate-700">Finalizado em {task.durationMinutes || 1} min</p>
+                                <p className="text-sm font-bold text-slate-700">Concluído em {task.durationMinutes || 1} min</p>
                               </div>
                             </div>
                             <button 
                               onClick={() => approveTask(task.id)}
                               className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
                             >
-                              <CheckCircle2 size={18} /> APROVAR E LIBERAR
+                              <CheckCircle2 size={18} /> APROVAR E LIBERAR QUARTO
                             </button>
                           </div>
                           <div className="mt-6 flex gap-3 overflow-x-auto pb-2 no-scrollbar">
                             {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
-                              <div key={i} className="relative group flex-shrink-0">
-                                <img src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
-                              </div>
+                              <img key={i} src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
                             ))}
                           </div>
                         </div>
@@ -148,7 +150,7 @@ const CleaningTasks: React.FC = () => {
                 <section className="space-y-4 opacity-75">
                   <div className="flex items-center gap-3 px-2">
                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Clock size={20} /></div>
-                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe em Atividade</h2>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Monitoramento de Campo</h2>
                   </div>
                   <div className="grid gap-3">
                     {teamActiveTasks.map(task => {
@@ -157,9 +159,11 @@ const CleaningTasks: React.FC = () => {
                         <div key={task.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center justify-between">
                           <div className="flex items-center gap-4">
                             <div className="font-black text-slate-400">#{tr?.number}</div>
-                            <div className="text-xs font-bold text-slate-600">{task.assignedByName} está limpando...</div>
+                            <div className="text-xs font-bold text-slate-600">{task.assignedByName} está em atividade...</div>
                           </div>
-                          <div className="text-xs font-black text-blue-500 animate-pulse uppercase">Em Progresso</div>
+                          <div className={`text-[10px] font-black uppercase px-3 py-1 rounded-lg ${task.status === CleaningStatus.EM_PROGRESSO ? 'bg-blue-50 text-blue-500 animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
+                            {task.status === CleaningStatus.EM_PROGRESSO ? 'Limpando Agora' : 'Aguardando Início'}
+                          </div>
                         </div>
                       );
                     })}
@@ -169,22 +173,22 @@ const CleaningTasks: React.FC = () => {
             </>
           )}
 
-          {/* VISÃO DO STAFF: MINHAS TAREFAS DESIGNADAS */}
+          {/* PAINEL DO STAFF (EXECUTOR): MINHAS TAREFAS DESIGNADAS */}
           <section className="space-y-4">
             <header className="flex items-center gap-4 px-2">
               <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
                 <ClipboardCheck size={24} />
               </div>
               <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minha Escala de Faxina</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Apenas tarefas enviadas para você</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Designações</h2>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Executar conforme orientação gerencial</p>
               </div>
             </header>
 
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Sem tarefas pendentes!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Aguarde novas designações da gerência.</p>
+                <p className="text-slate-900 font-black text-lg">Sem tarefas para você no momento!</p>
+                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Aguarde o gerente designar uma unidade no mapa.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -199,14 +203,14 @@ const CleaningTasks: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-[10px] uppercase">Prazo Máximo: {task.deadline || 'Imediato'}</p>
+                          <p className="text-rose-500 font-black text-[10px] uppercase">ENTREGA ATÉ: {task.deadline || 'IMEDIATO'}</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => isPending ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
                         className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
                       >
-                        {isPending ? <><Camera size={18} /> INICIAR TRABALHO</> : <><Play size={18} /> CONTINUAR</>}
+                        {isPending ? <><Camera size={18} /> REGISTRAR INÍCIO</> : <><Play size={18} /> CONTINUAR</>}
                       </button>
                     </div>
                   );
@@ -216,7 +220,7 @@ const CleaningTasks: React.FC = () => {
           </section>
         </div>
       ) : (
-        /* ÁREA DE EXECUÇÃO DA TAREFA (PARA QUEM ESTÁ LIMPANDO) */
+        /* ÁREA DE EXECUÇÃO (KARINE / STAFF) */
         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 animate-in slide-in-from-bottom-10">
           <div className="bg-slate-900 p-8 text-white">
             <div className="flex justify-between items-center mb-6">
@@ -269,7 +273,7 @@ const CleaningTasks: React.FC = () => {
               onClick={handleComplete} 
               className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
             >
-              FINALIZAR E ENVIAR PARA GERENTE <ArrowRight size={24} className="ml-2 inline" />
+              FINALIZAR E ENVIAR AUDITORIA <ArrowRight size={24} className="ml-2 inline" />
             </button>
           </div>
         </div>

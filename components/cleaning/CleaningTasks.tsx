@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
-  Camera, X, Bed, Timer, Play, MessageCircle, AlertCircle, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2
+  Camera, X, Bed, Timer, Play, MessageCircle, AlertCircle, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
@@ -18,15 +18,15 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
-  // Filtro Estrito: Funcionário vê apenas o que foi designado para o SEU ID.
-  const myTasks = tasks.filter(t => {
-    const isAssignedToMe = t.assignedTo === currentUser?.id;
-    const isPendingOrActive = t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
-    if (isAdminOrManager) return isPendingOrActive;
-    return isAssignedToMe && isPendingOrActive;
-  });
+  // STAFF: Só vê o que foi designado para o SEU ID específico
+  const myTasks = tasks.filter(t => 
+    t.assignedTo === currentUser?.id && 
+    (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
+  );
 
+  // GERENTE: Vê tarefas para auditar e tarefas que estão em andamento pela equipe
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
+  const teamActiveTasks = tasks.filter(t => t.status === CleaningStatus.EM_PROGRESSO && t.assignedTo !== currentUser?.id);
 
   useEffect(() => {
     let interval: any;
@@ -98,62 +98,93 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-10">
-          {/* AUDITORIA GERENCIAL */}
-          {isAdminOrManager && pendingAudits.length > 0 && (
-            <section className="space-y-4">
-              <div className="flex items-center gap-3 px-2">
-                <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><ShieldCheck size={20} /></div>
-                <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Aguardando Auditoria Gerenical</h2>
-              </div>
-              <div className="grid gap-4">
-                {pendingAudits.map(task => {
-                  const tr = rooms.find(r => r.id === task.roomId);
-                  return (
-                    <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-xl shadow-amber-500/10">
-                      <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
-                        <div className="flex items-center gap-4">
-                          <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-black text-2xl">
-                            {tr?.number}
+          
+          {/* VISÃO DO GERENTE: AUDITORIA E MONITORAMENTO */}
+          {isAdminOrManager && (
+            <>
+              {pendingAudits.length > 0 && (
+                <section className="space-y-4">
+                  <div className="flex items-center gap-3 px-2">
+                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><ShieldCheck size={20} /></div>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Aguardando Sua Aprovação</h2>
+                  </div>
+                  <div className="grid gap-4">
+                    {pendingAudits.map(task => {
+                      const tr = rooms.find(r => r.id === task.roomId);
+                      return (
+                        <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-xl shadow-amber-500/10 transition-all hover:scale-[1.01]">
+                          <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
+                            <div className="flex items-center gap-4">
+                              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-black text-2xl">
+                                {tr?.number}
+                              </div>
+                              <div>
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><UserIcon size={12}/> {task.assignedByName}</p>
+                                <p className="text-sm font-bold text-slate-700">Finalizado em {task.durationMinutes || 1} min</p>
+                              </div>
+                            </div>
+                            <button 
+                              onClick={() => approveTask(task.id)}
+                              className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
+                            >
+                              <CheckCircle2 size={18} /> APROVAR E LIBERAR
+                            </button>
                           </div>
-                          <div>
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Colaborador: {task.assignedByName}</p>
-                            <p className="text-sm font-bold text-slate-700">Tempo: {task.durationMinutes || 1} min</p>
+                          <div className="mt-6 flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                            {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
+                              <div key={i} className="relative group flex-shrink-0">
+                                <img src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
+                              </div>
+                            ))}
                           </div>
                         </div>
-                        <button 
-                          onClick={() => approveTask(task.id)}
-                          className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
-                        >
-                          <CheckCircle2 size={18} /> APROVAR E LIBERAR
-                        </button>
-                      </div>
-                      <div className="mt-6 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
-                        {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
-                          <img key={i} src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </section>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+
+              {teamActiveTasks.length > 0 && (
+                <section className="space-y-4 opacity-75">
+                  <div className="flex items-center gap-3 px-2">
+                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Clock size={20} /></div>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe em Atividade</h2>
+                  </div>
+                  <div className="grid gap-3">
+                    {teamActiveTasks.map(task => {
+                      const tr = rooms.find(r => r.id === task.roomId);
+                      return (
+                        <div key={task.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-4">
+                            <div className="font-black text-slate-400">#{tr?.number}</div>
+                            <div className="text-xs font-bold text-slate-600">{task.assignedByName} está limpando...</div>
+                          </div>
+                          <div className="text-xs font-black text-blue-500 animate-pulse uppercase">Em Progresso</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
+            </>
           )}
 
+          {/* VISÃO DO STAFF: MINHAS TAREFAS DESIGNADAS */}
           <section className="space-y-4">
             <header className="flex items-center gap-4 px-2">
               <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
                 <ClipboardCheck size={24} />
               </div>
               <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Faxinas Designadas</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tarefas para você hoje</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minha Escala de Faxina</h2>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Apenas tarefas enviadas para você</p>
               </div>
             </header>
 
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Tudo em ordem!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa designada no momento.</p>
+                <p className="text-slate-900 font-black text-lg">Sem tarefas pendentes!</p>
+                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Aguarde novas designações da gerência.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -161,19 +192,19 @@ const CleaningTasks: React.FC = () => {
                   const tr = rooms.find(r => r.id === task.roomId);
                   const isPending = task.status === CleaningStatus.PENDENTE;
                   return (
-                    <div key={task.id} className="bg-white rounded-[2rem] border border-slate-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm hover:shadow-xl transition-all border-l-4 border-l-blue-600">
+                    <div key={task.id} className="bg-white rounded-[2rem] border border-slate-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm hover:shadow-xl transition-all border-l-8 border-l-blue-600">
                       <div className="flex items-center gap-6 flex-1">
                         <div className={`p-5 rounded-2xl ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500 animate-pulse'}`}>
                           <Bed size={28} />
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-[10px] uppercase">Prazo: {task.deadline || 'Imediato'}</p>
+                          <p className="text-rose-500 font-black text-[10px] uppercase">Prazo Máximo: {task.deadline || 'Imediato'}</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => isPending ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
-                        className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg"
+                        className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
                       >
                         {isPending ? <><Camera size={18} /> INICIAR TRABALHO</> : <><Play size={18} /> CONTINUAR</>}
                       </button>
@@ -185,6 +216,7 @@ const CleaningTasks: React.FC = () => {
           </section>
         </div>
       ) : (
+        /* ÁREA DE EXECUÇÃO DA TAREFA (PARA QUEM ESTÁ LIMPANDO) */
         <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 animate-in slide-in-from-bottom-10">
           <div className="bg-slate-900 p-8 text-white">
             <div className="flex justify-between items-center mb-6">
@@ -223,7 +255,7 @@ const CleaningTasks: React.FC = () => {
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const photo = activeTask.photos?.find(p => p.type === req.id);
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center overflow-hidden hover:border-amber-400 transition-all shadow-inner group">
+                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center overflow-hidden hover:border-amber-400 transition-all shadow-inner group relative">
                       {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : 
                       <><Camera size={24} className="text-slate-300" /><span className="text-[8px] text-slate-400 uppercase font-black px-2 text-center tracking-widest mt-1">{req.label}</span></>}
                     </button>
@@ -237,7 +269,7 @@ const CleaningTasks: React.FC = () => {
               onClick={handleComplete} 
               className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
             >
-              FINALIZAR E ENVIAR AUDITORIA <ArrowRight size={24} className="ml-2 inline" />
+              FINALIZAR E ENVIAR PARA GERENTE <ArrowRight size={24} className="ml-2 inline" />
             </button>
           </div>
         </div>

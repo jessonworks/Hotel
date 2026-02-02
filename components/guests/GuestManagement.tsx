@@ -2,7 +2,10 @@
 import { GoogleGenAI } from "@google/genai";
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../../store';
-import { UserPlus, LogOut, X, Bed, DollarSign, Calendar, CreditCard, ScanLine, Sparkles, Loader2, Camera } from 'lucide-react';
+import { 
+  UserPlus, LogOut, X, Bed, DollarSign, Calendar, 
+  CreditCard, ScanLine, Sparkles, Loader2, Camera, MessageSquareText
+} from 'lucide-react';
 import { RoomStatus, PaymentMethod } from '../../types';
 
 const GuestManagement: React.FC = () => {
@@ -42,6 +45,12 @@ const GuestManagement: React.FC = () => {
     setShowCheckInModal(false);
   };
 
+  const shareReceipt = (guest: any) => {
+    const room = rooms.find(r => r.id === guest.roomId);
+    const text = `🏨 *HOSPEDAPRO - COMPROVANTE*\n\nOlá, *${guest.fullName}*!\nConfirmamos seu check-in:\n\n📍 Unidade: ${room?.number}\n📅 Entrada: ${new Date(guest.checkIn).toLocaleDateString()}\n📅 Saída: ${new Date(guest.checkOut).toLocaleDateString()}\n💰 Total: R$ ${guest.totalValue.toLocaleString('pt-BR')}\n💳 Pagamento: ${guest.paymentMethod}\n\nSeja bem-vindo(a)!`;
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+  };
+
   const handleAIScan = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!e.target.files || !e.target.files[0]) return;
     
@@ -52,22 +61,19 @@ const GuestManagement: React.FC = () => {
     reader.onloadend = async () => {
       try {
         const base64Data = (reader.result as string).split(',')[1];
-        // Create a new GoogleGenAI instance right before making an API call to ensure fresh configuration
         const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         
-        // Following Google GenAI SDK best practices for contents structure and response handling
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: {
             parts: [
               { inlineData: { data: base64Data, mimeType: file.type } },
-              { text: "Analise este documento de identidade (RG, CNH ou Passaporte) e extraia o NOME COMPLETO e o NÚMERO DO DOCUMENTO. Retorne apenas um JSON puro com as chaves: 'fullName' e 'documentNumber'." }
+              { text: "Analise este documento de identidade e extraia o NOME COMPLETO e o NÚMERO DO DOCUMENTO. Retorne apenas um JSON puro com as chaves: 'fullName' e 'documentNumber'." }
             ]
           },
           config: { responseMimeType: "application/json" }
         });
 
-        // Use response.text directly as a property, not a function
         const textOutput = response.text;
         const result = JSON.parse(textOutput || '{}');
         setFormData(prev => ({
@@ -77,7 +83,7 @@ const GuestManagement: React.FC = () => {
         }));
       } catch (error) {
         console.error("Erro ao ler documento:", error);
-        alert("Não foi possível ler o documento automaticamente. Tente preencher manualmente.");
+        alert("Erro na leitura da IA. Preencha manualmente.");
       } finally {
         setIsScanning(false);
       }
@@ -90,21 +96,10 @@ const GuestManagement: React.FC = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Hóspedes Ativos</h1>
-          <p className="text-slate-500 font-medium">Controle financeiro e estadias.</p>
+          <p className="text-slate-500 font-medium">Gestão de estadias em tempo real.</p>
         </div>
         <button 
-          onClick={() => {
-            setFormData({
-              fullName: '',
-              document: '',
-              checkIn: new Date().toISOString().split('T')[0],
-              checkOut: '',
-              roomId: '',
-              dailyRate: 150,
-              paymentMethod: PaymentMethod.PIX
-            });
-            setShowCheckInModal(true);
-          }}
+          onClick={() => setShowCheckInModal(true)}
           className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 transition-all shadow-xl shadow-blue-600/20 active:scale-95"
         >
           <UserPlus size={20} /> Novo Check-in
@@ -118,7 +113,7 @@ const GuestManagement: React.FC = () => {
             <div key={guest.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden hover:shadow-2xl transition-all group">
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg group-hover:rotate-6 transition-transform">
+                  <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg">
                     {guest.fullName.charAt(0)}
                   </div>
                   <div>
@@ -133,8 +128,8 @@ const GuestManagement: React.FC = () => {
                     <p className="font-black text-blue-600 text-lg">{room?.number || '???'}</p>
                   </div>
                   <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
-                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total Previsto</p>
-                    <p className="font-black text-slate-900 text-lg">R$ {guest.totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</p>
+                    <p className="text-[10px] font-black uppercase text-slate-400 mb-1">Total</p>
+                    <p className="font-black text-slate-900 text-lg">R$ {guest.totalValue.toLocaleString('pt-BR')}</p>
                   </div>
                 </div>
 
@@ -146,10 +141,16 @@ const GuestManagement: React.FC = () => {
 
               <div className="p-4 border-t border-slate-50 flex gap-2">
                 <button 
-                  onClick={() => checkOut(guest.id)}
-                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-600 rounded-2xl font-black text-xs uppercase tracking-widest hover:bg-rose-100 transition-all"
+                  onClick={() => shareReceipt(guest)}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-blue-50 text-blue-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
                 >
-                  <LogOut size={18} /> Finalizar Estadia
+                  <MessageSquareText size={18} /> Comprovante
+                </button>
+                <button 
+                  onClick={() => checkOut(guest.id)}
+                  className="flex-1 flex items-center justify-center gap-2 py-3 bg-rose-50 text-rose-600 rounded-2xl font-black text-[10px] uppercase tracking-widest hover:bg-rose-100 transition-all"
+                >
+                  <LogOut size={18} /> Check-out
                 </button>
               </div>
             </div>
@@ -166,14 +167,7 @@ const GuestManagement: React.FC = () => {
             </div>
 
             <div className="mb-8">
-              <input 
-                type="file" 
-                ref={fileInputRef} 
-                onChange={handleAIScan} 
-                className="hidden" 
-                accept="image/*" 
-                capture="environment"
-              />
+              <input type="file" ref={fileInputRef} onChange={handleAIScan} className="hidden" accept="image/*" capture="environment" />
               <button 
                 onClick={() => fileInputRef.current?.click()}
                 disabled={isScanning}
@@ -186,11 +180,8 @@ const GuestManagement: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <div className="flex items-center gap-2">
-                      <ScanLine size={32} />
-                      <Sparkles size={18} className="text-amber-500" />
-                    </div>
-                    <span className="font-black text-sm uppercase tracking-widest">Escanear RG/CNH via IA</span>
+                    <ScanLine size={32} />
+                    <span className="font-black text-sm uppercase tracking-widest">Escanear Documento IA</span>
                   </>
                 )}
               </button>
@@ -227,23 +218,10 @@ const GuestManagement: React.FC = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Diária (R$)</label>
-                   <input required type="number" className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={formData.dailyRate} onChange={e => setFormData({...formData, dailyRate: parseFloat(e.target.value)})} />
-                </div>
-                <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Pagamento</label>
-                   <select className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 outline-none" value={formData.paymentMethod} onChange={e => setFormData({...formData, paymentMethod: e.target.value as PaymentMethod})}>
-                      {Object.values(PaymentMethod).map(m => <option key={m} value={m}>{m}</option>)}
-                   </select>
-                </div>
-              </div>
-
               <div className="bg-emerald-50 p-6 rounded-[1.8rem] flex justify-between items-center border border-emerald-100 shadow-inner">
                  <div className="flex flex-col">
                    <span className="text-[10px] font-black uppercase text-emerald-800 tracking-widest">Valor Total Estadia</span>
-                   <span className="text-3xl font-black text-emerald-600">R$ {totalValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                   <span className="text-3xl font-black text-emerald-600">R$ {totalValue.toLocaleString('pt-BR')}</span>
                  </div>
                  <Sparkles className="text-emerald-300" size={32} />
               </div>

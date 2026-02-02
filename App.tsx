@@ -19,8 +19,14 @@ const App: React.FC = () => {
   const { currentUser, checkConnection } = useStore();
 
   useEffect(() => {
-    // Verifica a conexão com o Supabase na inicialização
+    // Heartbeat: Verifica a conexão a cada 60 segundos
+    const interval = setInterval(() => {
+      checkConnection();
+    }, 60000);
+    
     checkConnection();
+    
+    return () => clearInterval(interval);
   }, [checkConnection]);
 
   if (!currentUser) {

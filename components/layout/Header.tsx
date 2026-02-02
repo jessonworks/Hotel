@@ -3,12 +3,12 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { 
   Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 
-  CheckCircle2, Bed, Users, Cloud, CloudOff
+  CheckCircle2, Bed, Users, Cloud, Clock, ShieldAlert, Zap
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {
-  const { currentUser, updateCurrentUser, updateUserPassword, logout, rooms, guests, isSupabaseConnected } = useStore();
+  const { currentUser, updateCurrentUser, updateUserPassword, logout, rooms, guests, isSupabaseConnected, isDemoMode, cloudAvailableAgain } = useStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -16,8 +16,14 @@ const Header: React.FC = () => {
   const [passData, setPassData] = useState({ current: '', new: '', confirm: '' });
   const [tempProfile, setTempProfile] = useState({ fullName: currentUser?.fullName || '', email: currentUser?.email || '' });
   const [msg, setMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (searchQuery.length > 1) {
@@ -97,14 +103,37 @@ const Header: React.FC = () => {
             )}
           </div>
           
-          {/* Status Indicator */}
-          <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all animate-pulse ${
-            isSupabaseConnected ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
-          }`}>
-            {isSupabaseConnected ? <Cloud size={14} /> : <CheckCircle2 size={12} />}
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              {isSupabaseConnected ? 'Supabase Online' : 'Sincronizado Local'}
-            </span>
+          {/* Clock & Status */}
+          <div className="flex items-center gap-4">
+             <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black tracking-widest shadow-lg">
+                <Clock size={14} className="text-blue-400" />
+                {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+             </div>
+             
+             {isDemoMode && (
+               <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-2 px-4 py-1.5 bg-rose-500 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg">
+                    <ShieldAlert size={14} /> MODO DEMO
+                 </div>
+                 {cloudAvailableAgain && (
+                   <button 
+                     onClick={logout}
+                     className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg animate-bounce"
+                   >
+                     <Zap size={14} /> Restaurar Nuvem
+                   </button>
+                 )}
+               </div>
+             )}
+
+             <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all ${
+               isSupabaseConnected ? 'bg-blue-50 text-blue-600 border-blue-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'
+             }`}>
+               {isSupabaseConnected ? <Cloud size={14} /> : <CheckCircle2 size={12} />}
+               <span className="text-[10px] font-black uppercase tracking-widest">
+                 {isSupabaseConnected ? 'Nuvem OK' : 'Local Persist'}
+               </span>
+             </div>
           </div>
         </div>
 

@@ -9,6 +9,7 @@ import {
 } from './types';
 import { CLEANING_CHECKLIST_TEMPLATE } from './constants';
 
+// Força a leitura das variáveis de ambiente injetadas pelo Vite/Vercel
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
@@ -27,6 +28,7 @@ interface AppState {
   announcements: Announcement[];
   transactions: Transaction[];
   isSupabaseConnected: boolean;
+  connectionError: string | null;
   
   login: (email: string, password?: string) => Promise<boolean>;
   quickLogin: (role: UserRole) => Promise<void>;
@@ -82,98 +84,112 @@ export const useStore = create<AppState>()(
       announcements: [],
       transactions: [],
       isSupabaseConnected: false,
+      connectionError: null,
 
       checkConnection: async () => {
-        if (!supabase) return;
+        if (!supabase) {
+          set({ isSupabaseConnected: false, connectionError: 'Configurações ausentes na Vercel.' });
+          return;
+        }
         try {
-          const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
-          const connected = !error;
-          set({ isSupabaseConnected: connected });
+          // Tenta uma operação mínima para checar se o servidor responde
+          const { error } = await supabase.from('users').select('id').limit(1);
+          // Se não houve erro de rede (mesmo que seja erro de permissão), consideramos conectado
+          const connected = !error || (error && error.code !== 'PGRST301' && error.message !== 'Failed to fetch');
+          set({ isSupabaseConnected: !!connected, connectionError: error ? error.message : null });
           if (connected) get().syncData();
-        } catch {
-          set({ isSupabaseConnected: false });
+        } catch (err: any) {
+          set({ isSupabaseConnected: false, connectionError: err.message });
         }
       },
 
       syncData: async () => {
         if (!supabase) return;
         
-        const [usersReq, roomsReq, tasksReq, announcementsReq, inventoryReq, guestsReq] = await Promise.all([
-          supabase.from('users').select('*'),
-          supabase.from('rooms').select('*'),
-          supabase.from('tasks').select('*'),
-          supabase.from('announcements').select('*').order('created_at', { ascending: false }),
-          supabase.from('inventory').select('*'),
-          supabase.from('guests').select('*')
-        ]);
+        try {
+          const [usersReq, roomsReq, tasksReq, announcementsReq, inventoryReq, guestsReq] = await Promise.all([
+            supabase.from('users').select('*'),
+            supabase.from('rooms').select('*'),
+            supabase.from('tasks').select('*'),
+            supabase.from('announcements').select('*').order('created_at', { ascending: false }),
+            supabase.from('inventory').select('*'),
+            supabase.from('guests').select('*')
+          ]);
 
-        if (usersReq.data) {
-          set({ users: usersReq.data.map(u => ({
-            id: u.id, email: u.email, fullName: u.full_name, 
-            role: u.role as UserRole, avatarUrl: u.avatar_url, password: u.password
-          })) });
-        }
+          if (usersReq.data) {
+            set({ users: usersReq.data.map(u => ({
+              id: u.id, email: u.email, fullName: u.full_name, 
+              role: u.role as UserRole, avatarUrl: u.avatar_url, password: u.password
+            })) });
+          }
 
-        if (roomsReq.data && roomsReq.data.length > 0) {
-          set({ rooms: roomsReq.data.map(r => ({
-            id: r.id, number: r.number, floor: r.floor, status: r.status as RoomStatus,
-            category: r.category as RoomCategory, bedsCount: r.beds_count, icalUrl: r.ical_url,
-            type: RoomType.STANDARD, maxGuests: 2, hasMinibar: true, hasBalcony: false
-          })) });
-        }
+          if (roomsReq.data && roomsReq.data.length > 0) {
+            set({ rooms: roomsReq.data.map(r => ({
+              id: r.id, number: r.number, floor: r.floor, status: r.status as RoomStatus,
+              category: r.category as RoomCategory, bedsCount: r.beds_count, icalUrl: r.ical_url,
+              type: RoomType.STANDARD, maxGuests: 2, hasMinibar: true, hasBalcony: false
+            })) });
+          }
 
-        if (tasksReq.data) {
-          set({ tasks: tasksReq.data.map(t => ({
-            id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, 
-            assignedByName: t.assigned_by_name, status: t.status as CleaningStatus,
-            startedAt: t.started_at, completedAt: t.completed_at,
-            durationMinutes: t.duration_minutes, deadline: t.deadline,
-            notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified,
-            bedsToMake: t.beds_to_make, checklist: t.checklist || {}, photos: t.photos || []
-          })) });
-        }
+          if (tasksReq.data) {
+            set({ tasks: tasksReq.data.map(t => ({
+              id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, 
+              assignedByName: t.assigned_by_name, status: t.status as CleaningStatus,
+              startedAt: t.started_at, completedAt: t.completed_at,
+              durationMinutes: t.duration_minutes, deadline: t.deadline,
+              notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified,
+              bedsToMake: t.beds_to_make, checklist: t.checklist || {}, photos: t.photos || []
+            })) });
+          }
 
-        if (announcementsReq.data) {
-          set({ announcements: announcementsReq.data.map(a => ({
-            id: a.id, authorName: a.author_name, content: a.content,
-            createdAt: a.created_at, priority: a.priority as 'low' | 'normal' | 'high'
-          })) });
-        }
+          if (announcementsReq.data) {
+            set({ announcements: announcementsReq.data.map(a => ({
+              id: a.id, authorName: a.author_name, content: a.content,
+              createdAt: a.created_at, priority: a.priority as 'low' | 'normal' | 'high'
+            })) });
+          }
 
-        if (inventoryReq.data) {
-          set({ inventory: inventoryReq.data.map(i => ({
-            id: i.id, name: i.name, category: i.category, quantity: i.quantity,
-            minStock: i.min_stock, unitCost: i.unit_cost, price: i.unit_cost * 1.5
-          })) });
-        }
+          if (inventoryReq.data) {
+            set({ inventory: inventoryReq.data.map(i => ({
+              id: i.id, name: i.name, category: i.category, quantity: i.quantity,
+              minStock: i.min_stock, unitCost: i.unit_cost, price: i.unit_cost * 1.5
+            })) });
+          }
 
-        if (guestsReq.data) {
-          set({ guests: guestsReq.data.map(g => ({
-            id: g.id, fullName: g.full_name, document: g.document,
-            checkIn: g.check_in, checkOut: g.check_out, roomId: g.room_id,
-            totalValue: g.total_value, paymentMethod: g.payment_method as PaymentMethod,
-            checkedOutAt: g.checked_out_at, dailyRate: 150
-          })) });
+          if (guestsReq.data) {
+            set({ guests: guestsReq.data.map(g => ({
+              id: g.id, fullName: g.full_name, document: g.document,
+              checkIn: g.check_in, checkOut: g.check_out, roomId: g.room_id,
+              totalValue: g.total_value, paymentMethod: g.payment_method as PaymentMethod,
+              checkedOutAt: g.checked_out_at, dailyRate: 150
+            })) });
+          }
+        } catch (e) {
+          console.error("Erro na sincronização:", e);
         }
       },
 
       login: async (email, password) => {
         if (!supabase) return false;
-        const { data, error } = await supabase
-          .from('users')
-          .select('*')
-          .eq('email', email.toLowerCase())
-          .eq('password', password)
-          .single();
+        try {
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .eq('email', email.toLowerCase())
+            .eq('password', password)
+            .single();
 
-        if (data && !error) {
-          const user: User = {
-            id: data.id, email: data.email, fullName: data.full_name,
-            role: data.role as UserRole, avatarUrl: data.avatar_url, password: data.password
-          };
-          set({ currentUser: user });
-          get().syncData();
-          return true;
+          if (data && !error) {
+            const user: User = {
+              id: data.id, email: data.email, fullName: data.full_name,
+              role: data.role as UserRole, avatarUrl: data.avatar_url, password: data.password
+            };
+            set({ currentUser: user });
+            get().syncData();
+            return true;
+          }
+        } catch (e) {
+          console.error("Erro no login:", e);
         }
         return false;
       },
@@ -230,7 +246,6 @@ export const useStore = create<AppState>()(
       },
 
       syncICal: async (roomId) => {
-        // Simulação de sincronização - no futuro isso chamaria um Edge Function ou API externa
         get().syncData();
       },
 
@@ -330,7 +345,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v20-full-production',
+      name: 'hospedapro-v30-final',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

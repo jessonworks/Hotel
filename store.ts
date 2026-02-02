@@ -10,7 +10,7 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-// Referências que o Vite substituirá por strings reais durante o 'npm run build' na Vercel
+// Referências que o Vite substituirá por strings reais durante o build na Vercel
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 
@@ -117,22 +117,13 @@ export const useStore = create<AppState>()(
       managerBriefing: null,
 
       checkConnection: async () => {
-        // Diagnóstico detalhado para o usuário
-        if (!SUPABASE_URL && !SUPABASE_KEY) {
-          set({ isSupabaseConnected: false, connectionError: 'Faltam URL e KEY na Vercel' });
-          return;
-        }
-        if (!SUPABASE_URL) {
-          set({ isSupabaseConnected: false, connectionError: 'Falta URL do Banco' });
-          return;
-        }
-        if (!SUPABASE_KEY) {
-          set({ isSupabaseConnected: false, connectionError: 'Falta ANON_KEY do Banco' });
+        if (!SUPABASE_URL || !SUPABASE_KEY) {
+          set({ isSupabaseConnected: false, connectionError: 'Aguardando variáveis do build...' });
           return;
         }
         
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Erro de Init Supabase' });
+          set({ isSupabaseConnected: false, connectionError: 'Erro no Supabase Client' });
           return;
         }
 
@@ -391,7 +382,7 @@ export const useStore = create<AppState>()(
         if (!get().isDemoMode && supabase) {
           await supabase.from('inventory').insert({ 
             id, name: item.name, category: item.category, 
-            quantity: item.quantity, min_stock: item.minStock, unit_cost: item.unitCost 
+            quantity: item.quantity, min_stock: item.min_stock, unit_cost: item.unitCost 
           });
           get().syncData();
         } else {
@@ -462,7 +453,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v70-env-check',
+      name: 'hospedapro-v71-final-build',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

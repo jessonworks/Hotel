@@ -59,7 +59,7 @@ const RoomList: React.FC = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight font-outfit">Mapa de Unidades</h1>
-          <p className="text-slate-500 font-medium">Controle em tempo real do inventário.</p>
+          <p className="text-slate-500 font-medium">Controle em tempo real e filtros avançados.</p>
         </div>
         {isManagerOrAdmin && (
           <button onClick={() => rooms.forEach(r => r.icalUrl && syncICal(r.id))} className="flex items-center gap-2 px-6 py-2.5 bg-emerald-600 text-white font-bold rounded-2xl hover:bg-emerald-700 shadow-xl transition-all">
@@ -72,16 +72,16 @@ const RoomList: React.FC = () => {
       <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[1.5rem] border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 border-r border-slate-100 pr-5">
           <Filter size={16} className="text-slate-400" />
-          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Filtrar</span>
+          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Filtrar Mapa</span>
         </div>
         
         <select value={filter} onChange={e => setFilter(e.target.value as any)} className="bg-slate-50 p-2.5 rounded-xl text-xs font-bold border-none outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="ALL">Todos os Status</option>
+          <option value="ALL">Status: Todos</option>
           {Object.values(RoomStatus).map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
         </select>
 
         <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)} className="bg-slate-50 p-2.5 rounded-xl text-xs font-bold border-none outline-none focus:ring-2 focus:ring-blue-500">
-          <option value="ALL">Todas Categorias</option>
+          <option value="ALL">Categoria: Todas</option>
           {Object.values(RoomCategory).map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
@@ -110,7 +110,6 @@ const RoomList: React.FC = () => {
         ))}
       </div>
 
-      {/* MODAL DE GESTÃO - RESTAURADO COM TODAS AS FUNÇÕES */}
       {activeMenuRoomId && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/60 backdrop-blur-sm p-0 sm:p-4 animate-in fade-in">
           <div className="bg-white w-full max-w-md rounded-t-[2.5rem] sm:rounded-[2.5rem] shadow-2xl p-8 animate-in slide-in-from-bottom-10">
@@ -130,7 +129,7 @@ const RoomList: React.FC = () => {
                 >
                   <div className="flex items-center gap-4">
                     {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
-                    <span className="font-black text-lg">MARCAR COMO {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? 'LIMPO' : 'SUJO'}</span>
+                    <span className="font-black text-lg">MUDAR STATUS PARA {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? 'LIMPO' : 'SUJO'}</span>
                   </div>
                 </button>
 
@@ -149,7 +148,7 @@ const RoomList: React.FC = () => {
                     setActiveMenuRoomId(null); 
                   }} className="w-full flex items-center gap-4 p-6 bg-slate-50 text-slate-600 rounded-[1.8rem] hover:bg-slate-100 transition-all border border-slate-200">
                     <LinkIcon size={24} />
-                    <span className="font-black text-lg">VINCULAR AIRBNB (iCal)</span>
+                    <span className="font-black text-lg">LINK AIRBNB/ICAL</span>
                   </button>
                 )}
              </div>
@@ -157,7 +156,6 @@ const RoomList: React.FC = () => {
         </div>
       )}
 
-      {/* MODAL DESIGNAR FAXINA */}
       {assigningRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
@@ -169,34 +167,33 @@ const RoomList: React.FC = () => {
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Responsável</label>
                    <select value={assignmentData.staffId} onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold">
-                      <option value="">Selecione...</option>
+                      <option value="">Escolher colaborador...</option>
                       {staffMembers.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
                    </select>
                 </div>
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Prazo Final</label>
+                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Prazo Máximo</label>
                    <input type="time" value={assignmentData.deadline} onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" />
                 </div>
-                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest disabled:opacity-50">Confirmar Designação</button>
+                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest disabled:opacity-50">Confirmar Envio</button>
              </div>
           </div>
         </div>
       )}
 
-      {/* MODAL ICAL RESTAURADO */}
       {icalRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-2xl font-black text-slate-900">Configurar iCal</h3>
+                <h3 className="text-2xl font-black text-slate-900">Sincronizar Airbnb</h3>
                 <button onClick={() => setIcalRoomId(null)} className="text-slate-400 p-2 bg-slate-50 rounded-full"><X /></button>
              </div>
              <div className="space-y-6">
                 <div className="space-y-1">
-                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Link iCal (Airbnb/Booking)</label>
-                   <input type="text" value={icalInput} onChange={e => setIcalInput(e.target.value)} placeholder="https://..." className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500" />
+                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">URL iCal do Anúncio</label>
+                   <input type="text" value={icalInput} onChange={e => setIcalInput(e.target.value)} placeholder="https://www.airbnb.com/calendar/ical/..." className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all" />
                 </div>
-                <button onClick={handleSaveICal} className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest">Salvar e Sincronizar</button>
+                <button onClick={handleSaveICal} className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest">Salvar e Conectar</button>
              </div>
           </div>
         </div>

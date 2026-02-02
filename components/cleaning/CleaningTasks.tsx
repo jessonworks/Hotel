@@ -18,13 +18,10 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
-  // FILTRO INTELIGENTE:
-  // Se for STAFF (Karine), ela só vê o que o gerente designou para o ID dela (u2).
-  // Ela NÃO vê as áreas comuns "soltas" a menos que você as envie para ela.
+  // Filtro Estrito: Funcionário vê apenas o que foi designado para o SEU ID.
   const myTasks = tasks.filter(t => {
     const isAssignedToMe = t.assignedTo === currentUser?.id;
     const isPendingOrActive = t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
-    
     if (isAdminOrManager) return isPendingOrActive;
     return isAssignedToMe && isPendingOrActive;
   });
@@ -36,7 +33,7 @@ const CleaningTasks: React.FC = () => {
     if (activeTask?.status === CleaningStatus.EM_PROGRESSO && activeTask.startedAt) {
       interval = setInterval(() => {
         const start = new Date(activeTask.startedAt!).getTime();
-        setElapsed(Math.floor((Date.now() - start) / 1000));
+        setElapsed(Math.max(0, Math.floor((Date.now() - start) / 1000)));
       }, 1000);
     }
     return () => clearInterval(interval);
@@ -80,14 +77,15 @@ const CleaningTasks: React.FC = () => {
 
   const handleComplete = () => {
     if (!activeTask) return;
+    const finalDuration = Math.max(1, Math.floor(elapsed / 60));
     updateTask(activeTask.id, { 
       status: CleaningStatus.AGUARDANDO_APROVACAO,
       completedAt: new Date().toISOString(),
-      durationMinutes: Math.floor(elapsed / 60),
+      durationMinutes: finalDuration,
       fatorMamaeVerified: true
     });
     
-    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Auditoria Pendente ✅`;
+    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Aguardando Auditoria ✅`;
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
     
     setActiveTaskId(null);
@@ -100,7 +98,7 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-10">
-          {/* PAINEL DE AUDITORIA (SÓ APARECE PARA GERENTE) */}
+          {/* AUDITORIA GERENCIAL */}
           {isAdminOrManager && pendingAudits.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center gap-3 px-2">
@@ -118,8 +116,8 @@ const CleaningTasks: React.FC = () => {
                             {tr?.number}
                           </div>
                           <div>
-                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Executado por: {task.assignedByName}</p>
-                            <p className="text-sm font-bold text-slate-700">Tempo: {task.durationMinutes} min</p>
+                            <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Colaborador: {task.assignedByName}</p>
+                            <p className="text-sm font-bold text-slate-700">Tempo: {task.durationMinutes || 1} min</p>
                           </div>
                         </div>
                         <button 
@@ -147,15 +145,15 @@ const CleaningTasks: React.FC = () => {
                 <ClipboardCheck size={24} />
               </div>
               <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Faxinas Designadas</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Apenas tarefas enviadas pela gerência</p>
+                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Faxinas Designadas</h2>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tarefas para você hoje</p>
               </div>
             </header>
 
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Hotel em dia!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa designada para você no momento.</p>
+                <p className="text-slate-900 font-black text-lg">Tudo em ordem!</p>
+                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa designada no momento.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -170,14 +168,14 @@ const CleaningTasks: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-[10px] uppercase">PRAZO: {task.deadline || 'Urgente'}</p>
+                          <p className="text-rose-500 font-black text-[10px] uppercase">Prazo: {task.deadline || 'Imediato'}</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => isPending ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
                         className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg"
                       >
-                        {isPending ? <><Camera size={18} /> INICIAR</> : <><Play size={18} /> CONTINUAR</>}
+                        {isPending ? <><Camera size={18} /> INICIAR TRABALHO</> : <><Play size={18} /> CONTINUAR</>}
                       </button>
                     </div>
                   );
@@ -239,7 +237,7 @@ const CleaningTasks: React.FC = () => {
               onClick={handleComplete} 
               className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
             >
-              FINALIZAR E ENVIAR PARA GERENTE <ArrowRight size={24} className="ml-2 inline" />
+              FINALIZAR E ENVIAR AUDITORIA <ArrowRight size={24} className="ml-2 inline" />
             </button>
           </div>
         </div>

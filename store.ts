@@ -10,17 +10,9 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-const getEnv = (key: string) => {
-  try {
-    // @ts-ignore
-    return process.env[key] || import.meta.env[`VITE_${key}`] || import.meta.env[key] || '';
-  } catch {
-    return '';
-  }
-};
-
-const SUPABASE_URL = getEnv('SUPABASE_URL') || getEnv('URL_SUPABASE');
-const SUPABASE_KEY = getEnv('SUPABASE_ANON_KEY');
+// Referências que o Vite substituirá por strings reais durante o 'npm run build' na Vercel
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
 
 export const supabase = SUPABASE_URL && SUPABASE_KEY 
   ? createClient(SUPABASE_URL, SUPABASE_KEY) 
@@ -125,21 +117,32 @@ export const useStore = create<AppState>()(
       managerBriefing: null,
 
       checkConnection: async () => {
-        if (!SUPABASE_URL || !SUPABASE_KEY) {
-          set({ isSupabaseConnected: false, connectionError: 'Faltam chaves na Vercel' });
+        // Diagnóstico detalhado para o usuário
+        if (!SUPABASE_URL && !SUPABASE_KEY) {
+          set({ isSupabaseConnected: false, connectionError: 'Faltam URL e KEY na Vercel' });
           return;
         }
+        if (!SUPABASE_URL) {
+          set({ isSupabaseConnected: false, connectionError: 'Falta URL do Banco' });
+          return;
+        }
+        if (!SUPABASE_KEY) {
+          set({ isSupabaseConnected: false, connectionError: 'Falta ANON_KEY do Banco' });
+          return;
+        }
+        
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Erro de Inicialização' });
+          set({ isSupabaseConnected: false, connectionError: 'Erro de Init Supabase' });
           return;
         }
+
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
           if (error) throw error;
           set({ isSupabaseConnected: true, connectionError: null });
           if (!get().isDemoMode && get().currentUser) get().syncData();
         } catch (err: any) {
-          set({ isSupabaseConnected: false, connectionError: 'Banco Offline' });
+          set({ isSupabaseConnected: false, connectionError: 'Banco Offline ou Tabela Inexistente' });
         }
       },
 
@@ -282,7 +285,6 @@ export const useStore = create<AppState>()(
       },
 
       syncICal: async (roomId) => {
-        // Implementação futura de fetch real do .ics
         get().syncData();
       },
 
@@ -336,7 +338,7 @@ export const useStore = create<AppState>()(
             id, room_id: data.roomId, assigned_to: data.assignedTo,
             assigned_by_name: get().currentUser?.fullName || 'Admin',
             status: CleaningStatus.PENDENTE, deadline: data.deadline,
-            notes: data.notes, beds_to_make: data.bedsToMake || 0,
+            notes: data.notes, beds_to_make: data.beds_to_make || 0,
             checklist: initialChecklist, photos: []
           });
           get().syncData();
@@ -434,7 +436,18 @@ export const useStore = create<AppState>()(
         }
       },
 
-      generateAIBriefing: async () => {},
+      generateAIBriefing: async () => {
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-flash-preview',
+            contents: `Gere um briefing de 3 frases para o gerente do hotel. Status: ${get().rooms.filter(r => r.status === RoomStatus.OCUPADO).length} quartos ocupados, ${get().tasks.filter(t => t.status === CleaningStatus.PENDENTE).length} faxinas pendentes.`
+          });
+          set({ managerBriefing: response.text });
+        } catch (e) {
+          console.error("AI Error:", e);
+        }
+      },
       enterDemoMode: (role: UserRole, specificUser?: Partial<User>) => {
         const demoUser: User = {
           id: specificUser?.id || `demo-${role}`,
@@ -449,7 +462,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v68-full-crud',
+      name: 'hospedapro-v70-env-check',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

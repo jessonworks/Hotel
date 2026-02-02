@@ -1,7 +1,9 @@
-
 import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store';
-import { Bell, Search, Camera, X, Mail, LogOut, ChevronRight, Lock, CheckCircle2, Bed, Users } from 'lucide-react';
+import { 
+  Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 
+  CheckCircle2, Bed, Users 
+} from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {

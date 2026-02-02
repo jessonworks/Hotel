@@ -2,19 +2,29 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store';
 import { UserRole } from '../../types';
-import { Hotel, ShieldCheck, User, Hammer, Mail, Lock, AlertCircle } from 'lucide-react';
+import { Hotel, ShieldCheck, User, Hammer, Mail, Lock, AlertCircle, Loader2 } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const { login, quickLogin } = useStore();
+  const { login, quickLogin, isSupabaseConnected } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const success = login(email, password);
-    if (!success) {
-      setError('Credenciais inválidas. Verifique seu e-mail e senha.');
+    setLoading(true);
+    setError('');
+    
+    try {
+      const success = await login(email, password);
+      if (!success) {
+        setError('Credenciais inválidas ou erro de conexão.');
+      }
+    } catch (err) {
+      setError('Erro ao conectar com o servidor.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -26,7 +36,7 @@ const Login: React.FC = () => {
             <Hotel size={40} />
           </div>
           <h1 className="text-4xl font-black text-slate-900 tracking-tight">HospedaPro</h1>
-          <p className="text-slate-500 font-medium mt-2">Gestão hoteleira inteligente.</p>
+          <p className="text-slate-500 font-medium mt-2">Acesso Restrito ao Sistema.</p>
         </div>
 
         {error && (
@@ -38,7 +48,7 @@ const Login: React.FC = () => {
 
         <form onSubmit={handleLogin} className="space-y-4">
           <div className="space-y-2">
-            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">E-mail</label>
+            <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">E-mail Corporativo</label>
             <div className="relative">
               <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
               <input 
@@ -47,7 +57,8 @@ const Login: React.FC = () => {
                 value={email}
                 onChange={e => setEmail(e.target.value)}
                 placeholder="exemplo@hotel.com"
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none disabled:opacity-50" 
               />
             </div>
           </div>
@@ -61,37 +72,24 @@ const Login: React.FC = () => {
                 value={password}
                 onChange={e => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none" 
+                disabled={loading}
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all outline-none disabled:opacity-50" 
               />
             </div>
           </div>
-          <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-[1.5rem] shadow-xl shadow-slate-900/20 hover:bg-slate-800 transition-all transform active:scale-95">
-            ENTRAR NO SISTEMA
+          <button 
+            type="submit" 
+            disabled={loading}
+            className="w-full py-5 bg-slate-900 text-white font-black rounded-[1.5rem] shadow-xl shadow-slate-900/20 hover:bg-slate-800 transition-all transform active:scale-95 flex items-center justify-center gap-3"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : 'ACESSAR AGORA'}
           </button>
         </form>
 
-        <div className="relative py-4">
-          <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-slate-100"></div></div>
-          <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-300 font-black tracking-widest">Acesso Rápido Demo</span></div>
-        </div>
-
-        <div className="grid grid-cols-3 gap-3">
-          <button onClick={() => quickLogin(UserRole.ADMIN)} className="flex flex-col items-center gap-2 p-3 bg-slate-50 rounded-2xl hover:bg-blue-50 transition-colors group">
-            <ShieldCheck className="text-slate-300 group-hover:text-blue-600" size={24} />
-            <span className="text-[9px] font-black uppercase text-slate-400">Admin</span>
-          </button>
-          <button onClick={() => quickLogin(UserRole.MANAGER)} className="flex flex-col items-center gap-2 p-3 bg-slate-50 rounded-2xl hover:bg-blue-50 transition-colors group">
-            <User className="text-slate-300 group-hover:text-blue-600" size={24} />
-            <span className="text-[9px] font-black uppercase text-slate-400">Gerente</span>
-          </button>
-          <button onClick={() => quickLogin(UserRole.STAFF)} className="flex flex-col items-center gap-2 p-3 bg-slate-50 rounded-2xl hover:bg-blue-50 transition-colors group">
-            <Hammer className="text-slate-300 group-hover:text-blue-600" size={24} />
-            <span className="text-[9px] font-black uppercase text-slate-400">Staff</span>
-          </button>
-        </div>
-
-        <div className="pt-2 text-center">
-          <p className="text-slate-300 text-[10px] font-bold uppercase tracking-widest">Powered by HospedaPro Architecture</p>
+        <div className="pt-4 text-center">
+          <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-[9px] font-black uppercase tracking-widest ${isSupabaseConnected ? 'bg-blue-50 text-blue-600' : 'bg-rose-50 text-rose-600'}`}>
+            {isSupabaseConnected ? 'Servidor Online' : 'Servidor Offline'}
+          </div>
         </div>
       </div>
     </div>

@@ -9,7 +9,7 @@ import {
 } from './types';
 import { CLEANING_CHECKLIST_TEMPLATE } from './constants';
 
-// Força a leitura das variáveis de ambiente injetadas pelo Vite/Vercel
+// Força a leitura das variáveis de ambiente injetadas pelo Vite define ou process.env
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY || '';
 
@@ -88,16 +88,15 @@ export const useStore = create<AppState>()(
 
       checkConnection: async () => {
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Configurações ausentes na Vercel.' });
+          set({ isSupabaseConnected: false, connectionError: 'Supabase não configurado. Verifique as chaves VITE_ na Vercel.' });
           return;
         }
         try {
-          // Tenta uma operação mínima para checar se o servidor responde
           const { error } = await supabase.from('users').select('id').limit(1);
-          // Se não houve erro de rede (mesmo que seja erro de permissão), consideramos conectado
-          const connected = !error || (error && error.code !== 'PGRST301' && error.message !== 'Failed to fetch');
-          set({ isSupabaseConnected: !!connected, connectionError: error ? error.message : null });
-          if (connected) get().syncData();
+          // Consideramos conectado se houver resposta do servidor, mesmo erro de permissão (RLS)
+          const isHealthy = !error || (error && error.code !== 'PGRST301' && error.message !== 'Failed to fetch');
+          set({ isSupabaseConnected: !!isHealthy, connectionError: error ? error.message : null });
+          if (isHealthy) get().syncData();
         } catch (err: any) {
           set({ isSupabaseConnected: false, connectionError: err.message });
         }
@@ -105,7 +104,6 @@ export const useStore = create<AppState>()(
 
       syncData: async () => {
         if (!supabase) return;
-        
         try {
           const [usersReq, roomsReq, tasksReq, announcementsReq, inventoryReq, guestsReq] = await Promise.all([
             supabase.from('users').select('*'),
@@ -246,6 +244,7 @@ export const useStore = create<AppState>()(
       },
 
       syncICal: async (roomId) => {
+        // Implementação futura de sync externa
         get().syncData();
       },
 
@@ -345,7 +344,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v30-final',
+      name: 'hospedapro-v40-stable',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

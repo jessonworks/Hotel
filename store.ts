@@ -163,9 +163,27 @@ export const useStore = create<AppState>()(
       createTask: async (data) => {
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
+        const assignedUser = get().users.find(u => u.id === data.assignedTo);
         const template = CHECKLIST_TEMPLATES[data.roomId!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
         const initialChecklist = template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {});
-        set(state => ({ tasks: [...state.tasks, { id, roomId: data.roomId!, assignedTo: data.assignedTo, assignedByName: get().currentUser?.fullName || 'Admin', status: CleaningStatus.PENDENTE, deadline: data.deadline, notes: data.notes, bedsToMake: room?.bedsCount || 0, checklist: initialChecklist, photos: [], fatorMamaeVerified: false }], rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) }));
+        
+        set(state => ({ 
+          tasks: [...state.tasks, { 
+            id, 
+            roomId: data.roomId!, 
+            assignedTo: data.assignedTo, 
+            assignedByName: get().currentUser?.fullName || 'Admin', 
+            status: CleaningStatus.PENDENTE, 
+            deadline: data.deadline, 
+            notes: data.notes, 
+            bedsToMake: room?.bedsCount || 0, 
+            checklist: initialChecklist, 
+            photos: [], 
+            fatorMamaeVerified: false 
+          }], 
+          rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) 
+        }));
+
         if (!get().isDemoMode && supabase) {
           await supabase.from('tasks').insert({ id, room_id: data.roomId, assigned_to: data.assignedTo, assigned_by_name: get().currentUser?.fullName || 'Admin', status: CleaningStatus.PENDENTE, deadline: data.deadline, notes: data.notes, beds_to_make: room?.bedsCount || 0, checklist: initialChecklist, photos: [] });
           await supabase.from('rooms').update({ status: RoomStatus.LIMPANDO }).eq('id', data.roomId);
@@ -227,12 +245,26 @@ export const useStore = create<AppState>()(
       addAnnouncement: async (content, priority) => { const id = `a-${Date.now()}`; set(state => ({ announcements: [{ id, authorName: get().currentUser?.fullName || 'Sistema', content, priority, createdAt: new Date().toISOString() }, ...state.announcements] })); if (!get().isDemoMode && supabase) await supabase.from('announcements').insert({ id, author_name: get().currentUser?.fullName || 'Sistema', content, priority, created_at: new Date().toISOString() }); },
       addTransaction: async (data) => { const id = `tr-${Date.now()}`; set(state => ({ transactions: [{ ...data, id, date: new Date().toISOString() }, ...state.transactions] })); if (!get().isDemoMode && supabase) await supabase.from('transactions').insert({ id, date: new Date().toISOString(), type: data.type, category: data.category, amount: data.amount, description: data.description }); },
       generateAIBriefing: async () => { try { const ai = new GoogleGenAI({ apiKey: process.env.API_KEY }); const response = await ai.models.generateContent({ model: 'gemini-3-flash-preview', contents: `Gere um briefing de 3 frases para o gerente do hotel. Status: ${get().rooms.filter(r => r.status === RoomStatus.OCUPADO).length} quartos ocupados, ${get().tasks.filter(t => t.status === CleaningStatus.PENDENTE).length} faxinas pendentes.` }); set({ managerBriefing: response.text }); } catch (e) { console.error(e); } },
-      enterDemoMode: (role: UserRole, specificUser?: Partial<User>) => set({ currentUser: { id: specificUser?.id || `demo-${role}`, email: specificUser?.email || `${role}@hotel.com`, fullName: specificUser?.fullName || `${role.toUpperCase()} Demo`, role: role, password: 'demo' }, isDemoMode: true }),
-      logout: () => set({ currentUser: null, isDemoMode: false, rooms: generateInitialRooms() }),
+      enterDemoMode: (role: UserRole, specificUser?: Partial<User>) => {
+        // Tenta encontrar um usuário real com o mesmo papel para manter o ID
+        const existingUser = get().users.find(u => u.role === role);
+        const finalId = specificUser?.id || existingUser?.id || `demo-${role}`;
+        set({ 
+          currentUser: { 
+            id: finalId, 
+            email: specificUser?.email || existingUser?.email || `${role}@hotel.com`, 
+            fullName: specificUser?.fullName || existingUser?.fullName || `${role.toUpperCase()} Demo`, 
+            role: role, 
+            password: 'demo' 
+          }, 
+          isDemoMode: true 
+        });
+      },
+      logout: () => set({ currentUser: null, isDemoMode: false }),
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v75-final-flow',
+      name: 'hospedapro-v76-fix-ids',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => { state?.checkConnection(); },
     }

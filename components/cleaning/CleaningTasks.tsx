@@ -18,12 +18,15 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
-  // Filtro de tarefas corrigido: Se for gerente vê tudo, se for staff vê apenas o que foi designado para seu ID
+  // Filtro Estrito: Apenas tarefas designadas para o ID atual do usuário
   const myTasks = tasks.filter(t => {
     const isAssignedToMe = t.assignedTo === currentUser?.id;
     const isPendingOrActive = t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
     
+    // Gestores veem tudo que está pendente/em curso
     if (isAdminOrManager) return isPendingOrActive;
+    
+    // Staff vê SOMENTE o que foi designado para ele (ID correspondente)
     return isAssignedToMe && isPendingOrActive;
   });
 

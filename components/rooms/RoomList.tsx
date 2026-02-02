@@ -12,8 +12,6 @@ const RoomList: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<RoomCategory | 'ALL'>('ALL');
   const [activeMenuRoomId, setActiveMenuRoomId] = useState<string | null>(null);
   const [assigningRoomId, setAssigningRoomId] = useState<string | null>(null);
-  const [editingICalRoomId, setEditingICalRoomId] = useState<string | null>(null);
-  const [icalInput, setIcalInput] = useState('');
   const [assignmentData, setAssignmentData] = useState({ staffId: '', deadline: '', notes: '' });
 
   const staffMembers = users.filter(u => u.role === UserRole.STAFF);
@@ -28,8 +26,12 @@ const RoomList: React.FC = () => {
 
   const handleAssignTask = () => {
     if (!assigningRoomId) return;
-    const room = rooms.find(r => r.id === assigningRoomId);
-    createTask({ roomId: assigningRoomId, assignedTo: assignmentData.staffId, deadline: assignmentData.deadline, notes: assignmentData.notes });
+    createTask({ 
+      roomId: assigningRoomId, 
+      assignedTo: assignmentData.staffId, 
+      deadline: assignmentData.deadline, 
+      notes: assignmentData.notes 
+    });
     setAssigningRoomId(null);
     setAssignmentData({ staffId: '', deadline: '', notes: '' });
   };
@@ -40,11 +42,6 @@ const RoomList: React.FC = () => {
     const newStatus = room.status === RoomStatus.SUJO ? RoomStatus.DISPONIVEL : RoomStatus.SUJO;
     updateRoomStatus(roomId, newStatus);
     setActiveMenuRoomId(null);
-  };
-
-  // Verifica se o quarto tem uma auditoria pendente
-  const roomHasPendingAudit = (roomId: string) => {
-    return tasks.some(t => t.roomId === roomId && t.status === CleaningStatus.AGUARDANDO_APROVACAO);
   };
 
   return (
@@ -73,15 +70,12 @@ const RoomList: React.FC = () => {
                   room.status === RoomStatus.LIMPANDO ? 'bg-amber-50 text-amber-600 border-amber-100' :
                   'bg-rose-50 text-rose-600 border-rose-100'
                 }`}>
-                  {roomHasPendingAudit(room.id) ? 'AUDITORIA' : room.status}
+                  {room.status}
                 </div>
               </div>
               
-              <button onClick={() => setActiveMenuRoomId(room.id)} className={`w-full flex items-center justify-center gap-2 py-3 rounded-2xl text-[10px] font-black uppercase transition-all border ${
-                roomHasPendingAudit(room.id) ? 'bg-amber-600 text-white border-amber-500 animate-pulse' : 'bg-slate-50 text-slate-500 border-slate-100 hover:bg-blue-50 hover:text-blue-600'
-              }`}>
-                {roomHasPendingAudit(room.id) ? <ShieldCheck size={16} /> : <Settings2 size={16} />}
-                {roomHasPendingAudit(room.id) ? 'Revisar Auditoria' : 'Gestão'}
+              <button onClick={() => setActiveMenuRoomId(room.id)} className="w-full flex items-center justify-center gap-2 py-3 bg-slate-50 text-slate-500 rounded-2xl text-[10px] font-black uppercase transition-all border border-slate-100 hover:bg-blue-50 hover:text-blue-600">
+                <Settings2 size={16} /> Gestão
               </button>
             </div>
           </div>
@@ -97,31 +91,21 @@ const RoomList: React.FC = () => {
              </div>
              
              <div className="space-y-4">
-                {roomHasPendingAudit(activeMenuRoomId) ? (
-                  <button 
-                    onClick={() => { navigate('/cleaning'); setActiveMenuRoomId(null); }}
-                    className="w-full flex items-center gap-4 p-6 bg-amber-600 text-white rounded-[1.8rem] hover:bg-amber-700 transition-all shadow-xl shadow-amber-900/20"
-                  >
-                    <ShieldCheck size={24} />
-                    <span className="font-black text-lg">REVISAR FATOR MAMÃE</span>
-                  </button>
-                ) : (
-                  <button 
-                    onClick={() => handleToggleSujo(activeMenuRoomId)}
-                    className={`w-full flex items-center justify-between p-6 rounded-[1.8rem] border-4 transition-all ${
-                      rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO
-                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
-                      : 'border-rose-100 bg-rose-50 text-rose-700'
-                    }`}
-                  >
-                    <div className="flex items-center gap-4">
-                      {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
-                      <span className="font-black text-lg">MARCAR COMO {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? 'LIMPO' : 'SUJO'}</span>
-                    </div>
-                  </button>
-                )}
+                <button 
+                  onClick={() => handleToggleSujo(activeMenuRoomId)}
+                  className={`w-full flex items-center justify-between p-6 rounded-[1.8rem] border-4 transition-all ${
+                    rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO
+                    ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                    : 'border-rose-100 bg-rose-50 text-rose-700'
+                  }`}
+                >
+                  <div className="flex items-center gap-4">
+                    {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? <CheckCircle2 size={24} /> : <AlertTriangle size={24} />}
+                    <span className="font-black text-lg">MARCAR COMO {rooms.find(r => r.id === activeMenuRoomId)?.status === RoomStatus.SUJO ? 'LIMPO' : 'SUJO'}</span>
+                  </div>
+                </button>
 
-                {isManagerOrAdmin && rooms.find(r => r.id === activeMenuRoomId)?.status !== RoomStatus.LIMPANDO && !roomHasPendingAudit(activeMenuRoomId) && (
+                {isManagerOrAdmin && rooms.find(r => r.id === activeMenuRoomId)?.status !== RoomStatus.LIMPANDO && (
                   <button onClick={() => { setAssigningRoomId(activeMenuRoomId); setActiveMenuRoomId(null); }} className="w-full flex items-center gap-4 p-6 bg-slate-900 text-white rounded-[1.8rem] hover:bg-blue-600 transition-all shadow-xl">
                     <ClipboardList size={24} />
                     <span className="font-black text-lg">DESIGNAR FAXINA</span>
@@ -132,27 +116,41 @@ const RoomList: React.FC = () => {
         </div>
       )}
 
-      {/* Modal Ordem de Serviço */}
       {assigningRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
              <div className="flex justify-between items-center mb-8">
-                <h3 className="text-2xl font-black text-slate-900">Ordem de Serviço</h3>
+                <h3 className="text-2xl font-black text-slate-900">Designar Faxina</h3>
                 <button onClick={() => setAssigningRoomId(null)} className="text-slate-400 p-2 bg-slate-50 rounded-full"><X /></button>
              </div>
              <div className="space-y-6">
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Responsável</label>
-                   <select value={assignmentData.staffId} onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold">
+                   <select 
+                      value={assignmentData.staffId} 
+                      onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} 
+                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold"
+                   >
                       <option value="">Selecione...</option>
                       {staffMembers.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
                    </select>
                 </div>
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Prazo Final</label>
-                   <input type="time" value={assignmentData.deadline} onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" />
+                   <input 
+                      type="time" 
+                      value={assignmentData.deadline} 
+                      onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} 
+                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" 
+                   />
                 </div>
-                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl shadow-blue-600/20 uppercase tracking-widest disabled:opacity-50">Atribuir Tarefa</button>
+                <button 
+                  disabled={!assignmentData.staffId || !assignmentData.deadline} 
+                  onClick={handleAssignTask} 
+                  className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl shadow-blue-600/20 uppercase tracking-widest disabled:opacity-50"
+                >
+                  Confirmar Designação
+                </button>
              </div>
           </div>
         </div>

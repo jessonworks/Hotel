@@ -5,7 +5,7 @@ import { UserRole } from '../../types';
 import { Hotel, Mail, Lock, AlertCircle, Loader2, RefreshCw, Shield, Hammer, User, Play, ChevronRight } from 'lucide-react';
 
 const Login: React.FC = () => {
-  const { login, isSupabaseConnected, checkConnection, enterDemoMode } = useStore();
+  const { login, isSupabaseConnected, checkConnection, enterDemoMode, users } = useStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,7 +15,6 @@ const Login: React.FC = () => {
     checkConnection();
   }, [checkConnection]);
 
-  // Função auxiliar para inferir o cargo pelo e-mail (usada no modo Demo/Fallback)
   const getRoleFromEmail = (emailStr: string): UserRole => {
     const e = emailStr.toLowerCase();
     if (e.includes('admin')) return UserRole.ADMIN;
@@ -31,14 +30,14 @@ const Login: React.FC = () => {
       const success = await login(email, password);
       if (!success) {
         if (!isSupabaseConnected) {
-          // Se não houver conexão, entra no modo demo com o cargo correto baseado no e-mail
-          enterDemoMode(getRoleFromEmail(email));
+          const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
+          enterDemoMode(getRoleFromEmail(email), existingUser || { email: email });
         } else {
-          setError('E-mail ou senha incorretos conforme banco de dados.');
+          setError('E-mail ou senha incorretos.');
         }
       }
     } catch (err) {
-      setError('Erro de comunicação. Tente novamente.');
+      setError('Erro de comunicação.');
     } finally {
       setLoading(false);
     }
@@ -47,23 +46,30 @@ const Login: React.FC = () => {
   const handleQuickLogin = async (e: string, p: string) => {
     setEmail(e);
     setPassword(p);
+    setLoading(true);
     
+    // Tenta login real primeiro
     if (isSupabaseConnected) {
-      setLoading(true);
       const ok = await login(e, p);
-      if (!ok) {
-        // Se a conta não existir no banco real, entra no modo demo com o cargo correto
-        enterDemoMode(getRoleFromEmail(e), { email: e, fullName: e.split('@')[0].toUpperCase() });
+      if (ok) {
+        setLoading(false);
+        return;
       }
-      setLoading(false);
+    }
+
+    // Se não logou no banco, busca usuário local para manter o ID consistente
+    const existingUser = users.find(u => u.email.toLowerCase() === e.toLowerCase());
+    
+    if (existingUser) {
+      enterDemoMode(existingUser.role, existingUser);
     } else {
       enterDemoMode(getRoleFromEmail(e), { email: e, fullName: e.split('@')[0].toUpperCase() });
     }
+    setLoading(false);
   };
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 relative overflow-hidden">
-      {/* Background Decor */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 blur-[120px] rounded-full"></div>
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-indigo-600/20 blur-[120px] rounded-full"></div>
 
@@ -76,7 +82,6 @@ const Login: React.FC = () => {
           <p className="text-slate-500 font-bold mt-3 text-sm uppercase tracking-widest">Gestão de Hotéis & Pousadas</p>
         </div>
 
-        {/* Usuários Reais Detectados no Banco */}
         <div className="bg-slate-50/80 border border-slate-200 p-6 rounded-3xl space-y-4 shadow-inner">
           <div className="flex items-center gap-3 text-slate-900 text-[10px] font-black uppercase tracking-[0.2em]">
             <Play className="fill-blue-600 text-blue-600" size={14} />

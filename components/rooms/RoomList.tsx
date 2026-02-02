@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { RoomStatus, UserRole, RoomCategory, CleaningStatus } from '../../types';
-import { Coffee, Wind, X, Bed, RefreshCw, Link as LinkIcon, Calendar, Clock, ClipboardList, AlertTriangle, Settings2, CheckCircle2, ShieldCheck } from 'lucide-react';
+import { Coffee, Wind, X, Bed, RefreshCw, Link as LinkIcon, Calendar, Clock, ClipboardList, AlertTriangle, Settings2, CheckCircle2, ShieldCheck, Filter } from 'lucide-react';
 
 const RoomList: React.FC = () => {
   const { rooms, tasks, updateRoomStatus, updateRoomICal, createTask, users, syncICal, currentUser } = useStore();
@@ -12,6 +12,8 @@ const RoomList: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<RoomCategory | 'ALL'>('ALL');
   const [activeMenuRoomId, setActiveMenuRoomId] = useState<string | null>(null);
   const [assigningRoomId, setAssigningRoomId] = useState<string | null>(null);
+  const [icalRoomId, setIcalRoomId] = useState<string | null>(null);
+  const [icalInput, setIcalInput] = useState('');
   const [assignmentData, setAssignmentData] = useState({ staffId: '', deadline: '', notes: '' });
 
   const staffMembers = users.filter(u => u.role === UserRole.STAFF);
@@ -36,6 +38,14 @@ const RoomList: React.FC = () => {
     setAssignmentData({ staffId: '', deadline: '', notes: '' });
   };
 
+  const handleSaveICal = () => {
+    if (icalRoomId) {
+      updateRoomICal(icalRoomId, icalInput);
+      setIcalRoomId(null);
+      setIcalInput('');
+    }
+  };
+
   const handleToggleSujo = (roomId: string) => {
     const room = rooms.find(r => r.id === roomId);
     if (!room) return;
@@ -56,6 +66,24 @@ const RoomList: React.FC = () => {
             <RefreshCw size={18} /> Sync Reservas
           </button>
         )}
+      </div>
+
+      {/* FILTROS RESTAURADOS */}
+      <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[1.5rem] border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2 px-3 border-r border-slate-100 pr-5">
+          <Filter size={16} className="text-slate-400" />
+          <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Filtrar</span>
+        </div>
+        
+        <select value={filter} onChange={e => setFilter(e.target.value as any)} className="bg-slate-50 p-2.5 rounded-xl text-xs font-bold border-none outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="ALL">Todos os Status</option>
+          {Object.values(RoomStatus).map(s => <option key={s} value={s}>{s.toUpperCase()}</option>)}
+        </select>
+
+        <select value={categoryFilter} onChange={e => setCategoryFilter(e.target.value as any)} className="bg-slate-50 p-2.5 rounded-xl text-xs font-bold border-none outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="ALL">Todas Categorias</option>
+          {Object.values(RoomCategory).map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 md:gap-6">
@@ -111,11 +139,24 @@ const RoomList: React.FC = () => {
                     <span className="font-black text-lg">DESIGNAR FAXINA</span>
                   </button>
                 )}
+
+                {isManagerOrAdmin && (
+                  <button onClick={() => { 
+                    const r = rooms.find(rm => rm.id === activeMenuRoomId);
+                    setIcalInput(r?.icalUrl || '');
+                    setIcalRoomId(activeMenuRoomId); 
+                    setActiveMenuRoomId(null); 
+                  }} className="w-full flex items-center gap-4 p-6 bg-slate-50 text-slate-600 rounded-[1.8rem] hover:bg-slate-100 transition-all border border-slate-200">
+                    <LinkIcon size={24} />
+                    <span className="font-black text-lg">VINCULAR AIRBNB (iCal)</span>
+                  </button>
+                )}
              </div>
           </div>
         </div>
       )}
 
+      {/* MODAL DESIGNAR FAXINA */}
       {assigningRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
@@ -126,31 +167,35 @@ const RoomList: React.FC = () => {
              <div className="space-y-6">
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Responsável</label>
-                   <select 
-                      value={assignmentData.staffId} 
-                      onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} 
-                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold"
-                   >
-                      <option value="">Selecione...</option>
+                   <select value={assignmentData.staffId} onChange={e => setAssignmentData({...assignmentData, staffId: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold">
+                      <option value="">Selecione funcionário...</option>
                       {staffMembers.map(s => <option key={s.id} value={s.id}>{s.fullName}</option>)}
                    </select>
                 </div>
                 <div className="space-y-1">
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Prazo Final</label>
-                   <input 
-                      type="time" 
-                      value={assignmentData.deadline} 
-                      onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} 
-                      className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" 
-                   />
+                   <input type="time" value={assignmentData.deadline} onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" />
                 </div>
-                <button 
-                  disabled={!assignmentData.staffId || !assignmentData.deadline} 
-                  onClick={handleAssignTask} 
-                  className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl shadow-blue-600/20 uppercase tracking-widest disabled:opacity-50"
-                >
-                  Confirmar Designação
-                </button>
+                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest disabled:opacity-50">Confirmar Designação</button>
+             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL ICAL / AIRBNB RESTAURADO */}
+      {icalRoomId && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
+             <div className="flex justify-between items-center mb-8">
+                <h3 className="text-2xl font-black text-slate-900">Configurar iCal</h3>
+                <button onClick={() => setIcalRoomId(null)} className="text-slate-400 p-2 bg-slate-50 rounded-full"><X /></button>
+             </div>
+             <div className="space-y-6">
+                <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Link iCal (Airbnb/Booking)</label>
+                   <input type="text" value={icalInput} onChange={e => setIcalInput(e.target.value)} placeholder="https://..." className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <button onClick={handleSaveICal} className="w-full py-5 bg-emerald-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest">Salvar e Sincronizar</button>
              </div>
           </div>
         </div>

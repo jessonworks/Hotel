@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
-import { CleaningStatus, UserRole } from '../../types';
+import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
   Camera, X, Bed, Timer, Play, MessageCircle, AlertCircle, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2
 } from 'lucide-react';
@@ -18,15 +18,11 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
-  // Filtro Estrito: Apenas tarefas designadas para o ID atual do usuário
+  // Filtro de tarefas: STAFF vê o que lhe foi designado. GERENTE vê tudo pendente + Auditorias.
   const myTasks = tasks.filter(t => {
     const isAssignedToMe = t.assignedTo === currentUser?.id;
     const isPendingOrActive = t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
-    
-    // Gestores veem tudo que está pendente/em curso
     if (isAdminOrManager) return isPendingOrActive;
-    
-    // Staff vê SOMENTE o que foi designado para ele (ID correspondente)
     return isAssignedToMe && isPendingOrActive;
   });
 
@@ -88,7 +84,7 @@ const CleaningTasks: React.FC = () => {
       fatorMamaeVerified: true
     });
     
-    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Auditoria Fator Mamãe Realizada ✅`;
+    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Aguardando Auditoria ✅`;
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
     
     setActiveTaskId(null);
@@ -101,6 +97,7 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-10">
+          {/* PAINEL DE AUDITORIA (GERENTE) */}
           {isAdminOrManager && pendingAudits.length > 0 && (
             <section className="space-y-4">
               <div className="flex items-center gap-3 px-2">
@@ -111,7 +108,7 @@ const CleaningTasks: React.FC = () => {
                 {pendingAudits.map(task => {
                   const tr = rooms.find(r => r.id === task.roomId);
                   return (
-                    <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-xl shadow-amber-500/10 animate-pulse-subtle">
+                    <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-xl shadow-amber-500/10">
                       <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
                         <div className="flex items-center gap-4">
                           <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-black text-2xl">
@@ -119,21 +116,19 @@ const CleaningTasks: React.FC = () => {
                           </div>
                           <div>
                             <p className="text-xs font-black text-slate-400 uppercase tracking-widest">Equipe: {task.assignedByName}</p>
-                            <p className="text-sm font-bold text-slate-700">Concluído em: {task.durationMinutes} min</p>
+                            <p className="text-sm font-bold text-slate-700">Tempo de execução: {task.durationMinutes} min</p>
                           </div>
                         </div>
-                        <div className="flex gap-2">
-                          <button 
-                            onClick={() => approveTask(task.id)}
-                            className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
-                          >
-                            <CheckCircle2 size={18} /> APROVAR E LIBERAR
-                          </button>
-                        </div>
+                        <button 
+                          onClick={() => approveTask(task.id)}
+                          className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
+                        >
+                          <CheckCircle2 size={18} /> APROVAR E LIBERAR QUARTO
+                        </button>
                       </div>
                       <div className="mt-6 flex gap-2 overflow-x-auto pb-2 no-scrollbar">
                         {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
-                          <img key={i} src={p.url} className="w-20 h-20 rounded-xl object-cover border border-slate-100" alt="Audit" />
+                          <img key={i} src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
                         ))}
                       </div>
                     </div>
@@ -150,14 +145,14 @@ const CleaningTasks: React.FC = () => {
               </div>
               <div>
                 <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Faxinas Designadas</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tarefas atribuídas a você</p>
+                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Tarefas ativas para você</p>
               </div>
             </header>
 
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Sem tarefas pendentes!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Aguarde novas designações da gerência.</p>
+                <p className="text-slate-900 font-black text-lg">Hotel em ordem!</p>
+                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Nenhuma tarefa pendente agora.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -172,14 +167,14 @@ const CleaningTasks: React.FC = () => {
                         </div>
                         <div className="space-y-1">
                           <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-xs uppercase">PRAZO: {task.deadline || '--:--'}</p>
+                          <p className="text-rose-500 font-black text-[10px] uppercase">PRAZO: {task.deadline || 'IMEDIATO'}</p>
                         </div>
                       </div>
                       <button 
                         onClick={() => isPending ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
                         className="w-full sm:w-auto px-8 py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg"
                       >
-                        {isPending ? <><Camera size={18} /> INICIAR TRABALHO</> : <><Play size={18} /> CONTINUAR</>}
+                        {isPending ? <><Camera size={18} /> INICIAR</> : <><Play size={18} /> CONTINUAR</>}
                       </button>
                     </div>
                   );
@@ -241,7 +236,7 @@ const CleaningTasks: React.FC = () => {
               onClick={handleComplete} 
               className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
             >
-              FINALIZAR E ENVIAR <ArrowRight size={24} className="ml-2 inline" />
+              FINALIZAR E ENVIAR PARA GERENTE <ArrowRight size={24} className="ml-2 inline" />
             </button>
           </div>
         </div>

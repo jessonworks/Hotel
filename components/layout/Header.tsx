@@ -131,12 +131,12 @@ const Header: React.FC = () => {
 
              <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all ${
                isSupabaseConnected 
-                ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse' 
                 : connectionError === 'Faltam chaves na Vercel' 
                   ? 'bg-rose-50 text-rose-600 border-rose-100' 
                   : 'bg-amber-50 text-amber-600 border-amber-100'
              }`}>
-               {isSupabaseConnected ? <Cloud size={14} /> : <AlertCircle size={14} />}
+               {isSupabaseConnected ? <Cloud size={14} className="animate-bounce" /> : <AlertCircle size={14} />}
                <span className="text-[10px] font-black uppercase tracking-widest">
                  {isSupabaseConnected ? 'Nuvem OK' : connectionError || 'Local Persist'}
                </span>

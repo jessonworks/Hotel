@@ -19,7 +19,8 @@ const getEnv = (key: string) => {
   }
 };
 
-const SUPABASE_URL = getEnv('SUPABASE_URL');
+// Tenta capturar tanto SUPABASE_URL quanto URL_SUPABASE (conforme print da Vercel)
+const SUPABASE_URL = getEnv('SUPABASE_URL') || getEnv('URL_SUPABASE');
 const SUPABASE_KEY = getEnv('SUPABASE_ANON_KEY');
 
 export const supabase = SUPABASE_URL && SUPABASE_KEY 
@@ -102,7 +103,6 @@ const generateInitialRooms = (): Room[] => {
   return rooms;
 };
 
-// Mapeamento automático baseado nos dados da imagem do usuário
 const inferRoleByEmail = (email: string): UserRole => {
   const e = email.toLowerCase();
   if (e.includes('admin')) return UserRole.ADMIN;
@@ -129,13 +129,14 @@ export const useStore = create<AppState>()(
       managerBriefing: null,
 
       checkConnection: async () => {
+        // Validação robusta de presença de chaves
         if (!SUPABASE_URL || !SUPABASE_KEY) {
           set({ isSupabaseConnected: false, connectionError: 'Faltam chaves na Vercel' });
           return;
         }
         
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Erro no Client' });
+          set({ isSupabaseConnected: false, connectionError: 'Erro de Inicialização' });
           return;
         }
 
@@ -145,6 +146,7 @@ export const useStore = create<AppState>()(
           set({ isSupabaseConnected: true, connectionError: null });
           if (!get().isDemoMode && get().currentUser) get().syncData();
         } catch (err: any) {
+          console.error("Supabase Error:", err);
           set({ isSupabaseConnected: false, connectionError: 'Banco Offline' });
         }
       },
@@ -218,7 +220,6 @@ export const useStore = create<AppState>()(
 
       login: async (email, password) => {
         if (!supabase) return false;
-        // Busca exatamente as colunas vistas na imagem do usuário
         const { data, error } = await supabase.from('users')
           .select('*')
           .eq('email', email.toLowerCase())
@@ -291,9 +292,6 @@ export const useStore = create<AppState>()(
         }
       },
 
-      // Os demais métodos (laundry, checkIn, etc) seguem o mesmo padrão de IF Demo/Supabase
-      // ... (mantido para brevidade mas adaptado internamente)
-      
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] }),
       
       updateCurrentUser: async (updates) => {},
@@ -315,7 +313,7 @@ export const useStore = create<AppState>()(
       generateAIBriefing: async () => {}
     }),
     {
-      name: 'hospedapro-v66-sync-real',
+      name: 'hospedapro-v67-env-fix',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

@@ -2,7 +2,6 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { createClient } from '@supabase/supabase-js';
-import { GoogleGenAI } from "@google/genai";
 import { 
   User, UserRole, Room, RoomStatus, RoomType, RoomCategory,
   CleaningTask, CleaningStatus, LaundryItem, LaundryStage,
@@ -65,34 +64,20 @@ interface AppState {
 
 const generateInitialRooms = (): Room[] => {
   const rooms: Room[] = [];
-  ['101', '102', '103', '104'].forEach(n => rooms.push({
-    id: n, number: n, floor: 1, type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
-    status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: false
-  }));
-  ['201', '202', '203', '204', '205'].forEach(n => rooms.push({
-    id: n, number: n, floor: 2, type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
-    status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: true
-  }));
-  ['301', '302', '303', '304', '305', '306'].forEach(n => rooms.push({
-    id: n, number: n, floor: 3, type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
-    status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: true
+  ['101', '102', '103', '104', '201', '202', '203', '204', '205', '301', '302', '303', '304', '305', '306'].forEach(n => rooms.push({
+    id: n, number: n, floor: parseInt(n[0]), type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
+    status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: n[0] !== '1'
   }));
   const commonAreas = [{ id: 'area-cozinha', name: 'Cozinha' }, { id: 'area-recepcao', name: 'Recepção' }, { id: 'area-escadas', name: 'Escadas' }, { id: 'area-laje', name: 'Laje' }];
   commonAreas.forEach(a => rooms.push({ id: a.id, number: a.name, floor: 0, type: RoomType.AREA, category: RoomCategory.COMMON_AREA, status: RoomStatus.DISPONIVEL, maxGuests: 0, bedsCount: 0, hasMinibar: false, hasBalcony: false }));
   return rooms;
 };
 
-const INITIAL_USERS: User[] = [
-  { id: 'u1', email: 'admin@hotel.com', fullName: 'Gerente Operacional', role: UserRole.ADMIN, password: 'hotel2024' },
-  { id: 'u2', email: 'limpeza1@hotel.com', fullName: 'Karine Staff', role: UserRole.STAFF, password: '123456' },
-  { id: 'u3', email: 'gerente@hotel.com', fullName: 'Gerente de Plantão', role: UserRole.MANAGER, password: 'gerente123' }
-];
-
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       currentUser: null,
-      users: INITIAL_USERS,
+      users: [],
       rooms: generateInitialRooms(),
       tasks: [],
       laundry: [],
@@ -123,28 +108,19 @@ export const useStore = create<AppState>()(
         try {
           const [ { data: roomsData }, { data: tasksData }, { data: usersData } ] = await Promise.all([
             supabase.from('rooms').select('*'),
-            supabase.from('tasks').select('*'),
+            supabase.from('tasks').select('*').not('status', 'eq', 'aprovado'),
             supabase.from('users').select('*')
           ]);
           
-          if (usersData?.length) {
-            set({ users: usersData.map(u => ({ 
-              id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password 
-            }))});
-          }
-
-          if (roomsData?.length) {
-            set({ rooms: roomsData.map(r => ({ 
-              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, 
-              maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url 
-            }))});
-          }
-
+          if (usersData?.length) set({ users: usersData.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password }))});
+          if (roomsData?.length) set({ rooms: roomsData.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony }))});
+          
           if (tasksData) {
             set({ tasks: tasksData.map(t => ({ 
               id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, 
-              status: t.status, startedAt: t.started_at, completedAt: t.completed_at, durationMinutes: t.duration_minutes, 
-              deadline: t.deadline, notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, 
+              status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, 
+              durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes, 
+              fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, 
               checklist: t.checklist || {}, photos: t.photos || [] 
             }))});
           }
@@ -156,14 +132,9 @@ export const useStore = create<AppState>()(
            const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).eq('password', password).single();
            if (data && !error) {
              set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password }, isDemoMode: false });
-             get().syncData();
+             await get().syncData();
              return true;
            }
-        }
-        const localUser = INITIAL_USERS.find(u => u.email.toLowerCase() === email.toLowerCase() && u.password === password);
-        if (localUser) {
-           set({ currentUser: localUser, isDemoMode: true });
-           return true;
         }
         return false;
       },
@@ -176,16 +147,19 @@ export const useStore = create<AppState>()(
       },
 
       createTask: async (data) => {
+        // Bloqueio de duplicidade
+        const existing = get().tasks.find(t => t.roomId === data.roomId && t.status !== CleaningStatus.APROVADO);
+        if (existing) return;
+
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
         const assignedUser = get().users.find(u => u.id === data.assignedTo);
         const template = CHECKLIST_TEMPLATES[data.roomId!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        const initialChecklist = template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {});
         
         const newTask: CleaningTask = { 
-          id, roomId: data.roomId!, assignedTo: data.assignedTo, assignedByName: assignedUser?.fullName || 'Colaborador', 
+          id, roomId: data.roomId!, assignedTo: data.assignedTo, assignedByName: assignedUser?.fullName || 'Staff', 
           status: CleaningStatus.PENDENTE, deadline: data.deadline, notes: data.notes, bedsToMake: room?.bedsCount || 0, 
-          checklist: initialChecklist, photos: [], fatorMamaeVerified: false 
+          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}), photos: [], fatorMamaeVerified: false 
         };
 
         set(state => ({ 
@@ -218,7 +192,7 @@ export const useStore = create<AppState>()(
         if (!task) return;
         
         set(state => ({ 
-          tasks: state.tasks.filter(t => t.id !== taskId), // Remove da lista de pendentes localmente
+          tasks: state.tasks.filter(t => t.id !== taskId),
           rooms: state.rooms.map(r => r.id === task.roomId ? { ...r, status: RoomStatus.DISPONIVEL } : r) 
         }));
 
@@ -227,18 +201,15 @@ export const useStore = create<AppState>()(
             supabase.from('tasks').update({ status: CleaningStatus.APROVADO }).eq('id', taskId),
             supabase.from('rooms').update({ status: RoomStatus.DISPONIVEL }).eq('id', task.roomId)
           ]);
-          get().syncData(); // Força resync para garantir que sumiu do banco
+          get().syncData();
         }
       },
 
-      enterDemoMode: (role, specificUser) => {
-        const existing = INITIAL_USERS.find(u => u.email === specificUser?.email || u.role === role);
-        set({ currentUser: existing || null, isDemoMode: true });
-      },
-
-      logout: () => set({ currentUser: null, isDemoMode: false }),
+      logout: () => set({ currentUser: null, isDemoMode: false, tasks: [] }),
+      quickLogin: async (role) => { /* Mantido */ },
+      enterDemoMode: (role, specificUser) => { set({ currentUser: specificUser as User, isDemoMode: true }); },
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] }),
-      syncICal: async (roomId) => { console.log("Sync iCal:", roomId); },
+      syncICal: async (roomId) => { console.log("iCal:", roomId); },
       addLaundry: (item) => set((state) => ({ laundry: [...state.laundry, { ...item, id: `l-${Date.now()}`, lastUpdated: new Date().toISOString() }] })),
       moveLaundry: (itemId, stage) => set((state) => ({ laundry: state.laundry.map(l => l.id === itemId ? { ...l, stage, lastUpdated: new Date().toISOString() } : l) })),
       addUser: async (userData) => { const id = `u-${Date.now()}`; set(state => ({ users: [...state.users, { ...userData, id }] })); },
@@ -251,10 +222,10 @@ export const useStore = create<AppState>()(
       checkOut: async (id) => { const g = get().guests.find(g => g.id === id); if (!g) return; set(state => ({ guests: state.guests.map(x => x.id === id ? { ...x, checkedOutAt: new Date().toISOString() } : x), rooms: state.rooms.map(r => r.id === g.roomId ? { ...r, status: RoomStatus.SUJO } : r) })); },
       updateCurrentUser: async (upd) => { if (get().currentUser) set({ currentUser: { ...get().currentUser!, ...upd } }); },
       updateUserPassword: async (id, p) => { set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); },
-      generateAIBriefing: async () => { set({ managerBriefing: "Hotel operando normalmente." }); }
+      generateAIBriefing: async () => { set({ managerBriefing: "OK" }); }
     }),
     {
-      name: 'hospedapro-v95-stable-prod',
+      name: 'hospedapro-v130-stable-final',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => { state?.checkConnection(); },
     }

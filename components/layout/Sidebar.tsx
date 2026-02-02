@@ -3,7 +3,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useStore } from '../../store';
 import { NAVIGATION_ITEMS } from '../../constants';
-import { LogOut, Hotel, Sparkles } from 'lucide-react';
+import { LogOut, Hotel } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
   const { currentUser, logout } = useStore();
@@ -17,7 +17,6 @@ const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* Desktop Sidebar */}
       <aside className="hidden md:flex flex-col w-72 bg-slate-950 text-white shrink-0 relative overflow-hidden">
         <div className="absolute top-0 left-0 w-full h-full pointer-events-none">
           <div className="absolute top-[-10%] left-[-20%] w-[100%] h-[50%] bg-blue-600/10 blur-[120px] rounded-full"></div>
@@ -29,7 +28,7 @@ const Sidebar: React.FC = () => {
           </div>
           <div className="flex flex-col">
             <span className="font-black text-2xl tracking-tight leading-none text-white">HospedaPro</span>
-            <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mt-1 flex items-center gap-1">Premium</span>
+            <span className="text-[10px] font-black text-blue-400 uppercase tracking-[0.3em] mt-1">Premium</span>
           </div>
         </div>
         
@@ -59,7 +58,6 @@ const Sidebar: React.FC = () => {
         </div>
       </aside>
 
-      {/* Mobile Bottom Nav - Compact and high contrast */}
       <nav className="md:hidden fixed bottom-4 left-4 right-4 bg-slate-950/95 backdrop-blur-2xl border border-white/10 flex items-center h-20 z-50 rounded-[2.5rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] overflow-hidden">
         <div className="flex w-full overflow-x-auto no-scrollbar px-2">
           {filteredItems.map(item => {

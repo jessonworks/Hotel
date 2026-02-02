@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
-  Camera, X, Bed, Timer, Play, MessageCircle, AlertCircle, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon
+  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon, LayoutDashboard, History
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
@@ -16,17 +16,17 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
-  // STAFF: Só enxerga tarefas que foram REALMENTE designadas para o seu ID
+  // STAFF (Rose/Karine): Recebe apenas o que foi designado ao seu ID único
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // GERENTE: Monitora auditorias pendentes e o progresso da equipe
+  // GERENTE: Monitora aprovações e o campo
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
-  const teamActiveTasks = tasks.filter(t => 
-    (t.status === CleaningStatus.EM_PROGRESSO || t.status === CleaningStatus.PENDENTE) && 
-    t.assignedTo !== currentUser?.id
+  const teamActivity = tasks.filter(t => 
+    t.assignedTo !== currentUser?.id && 
+    (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
   const activeTask = tasks.find(t => t.id === activeTaskId);
@@ -50,6 +50,7 @@ const CleaningTasks: React.FC = () => {
   };
 
   const handleStartPhoto = (taskId: string) => {
+    if (isAdminOrManager) return;
     setCapturingFor({ id: 'start_audit', category: 'START' });
     setActiveTaskId(taskId);
     fileInputRef.current?.click();
@@ -89,7 +90,7 @@ const CleaningTasks: React.FC = () => {
       fatorMamaeVerified: true
     });
     
-    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number || 'Área'}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Aguardando Auditoria ✅`;
+    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Conferência Pendente ✅`;
     window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
     
     setActiveTaskId(null);
@@ -101,42 +102,42 @@ const CleaningTasks: React.FC = () => {
       <input type="file" ref={fileInputRef} onChange={onFileChange} accept="image/*" className="hidden" capture="environment" />
       
       {!activeTask ? (
-        <div className="space-y-10">
+        <div className="space-y-12">
           
-          {/* PAINEL DO GERENTE: AUDITORIA E MONITORAMENTO */}
+          {/* PAINEL GERENCIAL (AUDITORIA) */}
           {isAdminOrManager && (
             <>
               {pendingAudits.length > 0 && (
                 <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
-                    <div className="p-2 bg-amber-100 text-amber-600 rounded-lg"><ShieldCheck size={20} /></div>
+                    <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-500/20"><ShieldCheck size={20} /></div>
                     <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Solicitações de Aprovação</h2>
                   </div>
-                  <div className="grid gap-4">
+                  <div className="grid gap-6">
                     {pendingAudits.map(task => {
                       const tr = rooms.find(r => r.id === task.roomId);
                       return (
-                        <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-xl shadow-amber-500/10 transition-all hover:scale-[1.01]">
+                        <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-8 shadow-2xl shadow-slate-200/50 transition-all hover:scale-[1.01]">
                           <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
-                            <div className="flex items-center gap-4">
-                              <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 font-black text-2xl">
+                            <div className="flex items-center gap-6">
+                              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-amber-600 font-black text-3xl border border-amber-100 shadow-inner">
                                 {tr?.number}
                               </div>
-                              <div>
-                                <p className="text-xs font-black text-slate-400 uppercase tracking-widest flex items-center gap-1"><UserIcon size={12}/> {task.assignedByName}</p>
+                              <div className="space-y-1">
+                                <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-1"><UserIcon size={12}/> {task.assignedByName}</p>
                                 <p className="text-sm font-bold text-slate-700">Concluído em {task.durationMinutes || 1} min</p>
                               </div>
                             </div>
                             <button 
                               onClick={() => approveTask(task.id)}
-                              className="px-8 py-4 bg-emerald-600 text-white font-black rounded-2xl flex items-center gap-2 hover:bg-emerald-700 transition-all shadow-lg active:scale-95"
+                              className="w-full sm:w-auto px-12 py-5 bg-emerald-600 text-white font-black rounded-[1.5rem] flex items-center justify-center gap-3 hover:bg-emerald-700 transition-all shadow-xl active:scale-95 uppercase tracking-widest text-xs"
                             >
-                              <CheckCircle2 size={18} /> APROVAR E LIBERAR QUARTO
+                              <CheckCircle2 size={24} /> APROVAR E LIBERAR
                             </button>
                           </div>
-                          <div className="mt-6 flex gap-3 overflow-x-auto pb-2 no-scrollbar">
+                          <div className="mt-8 flex gap-4 overflow-x-auto pb-4 custom-scrollbar">
                             {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
-                              <img key={i} src={p.url} className="w-24 h-24 rounded-2xl object-cover border-2 border-slate-100 shadow-sm" alt="Audit" />
+                              <img key={i} src={p.url} className="w-32 h-32 rounded-[2rem] object-cover border-4 border-slate-50 shadow-md" alt="Audit" />
                             ))}
                           </div>
                         </div>
@@ -146,23 +147,29 @@ const CleaningTasks: React.FC = () => {
                 </section>
               )}
 
-              {teamActiveTasks.length > 0 && (
-                <section className="space-y-4 opacity-75">
+              {teamActivity.length > 0 && (
+                <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
-                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><Clock size={20} /></div>
+                    <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><LayoutDashboard size={20} /></div>
                     <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Monitoramento de Campo</h2>
                   </div>
                   <div className="grid gap-3">
-                    {teamActiveTasks.map(task => {
+                    {teamActivity.map(task => {
                       const tr = rooms.find(r => r.id === task.roomId);
+                      const isWorking = task.status === CleaningStatus.EM_PROGRESSO;
                       return (
-                        <div key={task.id} className="bg-white rounded-2xl border border-slate-200 p-4 flex items-center justify-between">
+                        <div key={task.id} className="bg-white rounded-3xl border border-slate-100 p-5 flex items-center justify-between shadow-sm">
                           <div className="flex items-center gap-4">
-                            <div className="font-black text-slate-400">#{tr?.number}</div>
-                            <div className="text-xs font-bold text-slate-600">{task.assignedByName} está em atividade...</div>
+                            <div className="font-black text-slate-300 text-xl">#{tr?.number}</div>
+                            <div>
+                               <p className="text-sm font-black text-slate-800 leading-none">{task.assignedByName}</p>
+                               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">
+                                 {isWorking ? 'Em campo agora...' : 'Aguardando Início'}
+                               </p>
+                            </div>
                           </div>
-                          <div className={`text-[10px] font-black uppercase px-3 py-1 rounded-lg ${task.status === CleaningStatus.EM_PROGRESSO ? 'bg-blue-50 text-blue-500 animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
-                            {task.status === CleaningStatus.EM_PROGRESSO ? 'Limpando Agora' : 'Aguardando Início'}
+                          <div className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest ${isWorking ? 'bg-blue-600 text-white animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
+                            {isWorking ? 'Limpando' : 'Pendente'}
                           </div>
                         </div>
                       );
@@ -170,111 +177,129 @@ const CleaningTasks: React.FC = () => {
                   </div>
                 </section>
               )}
+
+              {pendingAudits.length === 0 && teamActivity.length === 0 && (
+                <div className="bg-white rounded-[3rem] border-2 border-dashed border-slate-200 p-20 text-center opacity-40">
+                  <CheckCircle2 size={56} className="text-slate-200 mx-auto mb-6" />
+                  <p className="text-slate-900 font-black text-xl">Tudo em ordem.</p>
+                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest mt-2">Nenhuma atividade registrada no momento.</p>
+                </div>
+              )}
             </>
           )}
 
-          {/* PAINEL DO STAFF (EXECUTOR): MINHAS TAREFAS DESIGNADAS */}
-          <section className="space-y-4">
-            <header className="flex items-center gap-4 px-2">
-              <div className="p-3 bg-slate-900 text-white rounded-2xl shadow-lg">
-                <ClipboardCheck size={24} />
-              </div>
-              <div>
-                <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Designações</h2>
-                <p className="text-xs text-slate-400 font-bold uppercase tracking-widest">Executar conforme orientação gerencial</p>
-              </div>
-            </header>
+          {/* VISÃO DO STAFF (KARINE / ROSE) */}
+          {!isAdminOrManager && (
+            <section className="space-y-8">
+              <header className="flex items-center gap-5 px-2">
+                <div className="p-5 bg-slate-950 text-white rounded-[2rem] shadow-2xl">
+                  <ClipboardCheck size={32} />
+                </div>
+                <div>
+                  <h2 className="text-4xl font-black text-slate-900 tracking-tighter">Minha Pauta</h2>
+                  <p className="text-xs text-slate-400 font-black uppercase tracking-[0.2em]">Ordens enviadas pelo gerente</p>
+                </div>
+              </header>
 
-            {myTasks.length === 0 ? (
-              <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center">
-                <p className="text-slate-900 font-black text-lg">Sem tarefas para você no momento!</p>
-                <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Aguarde o gerente designar uma unidade no mapa.</p>
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {myTasks.map(task => {
-                  const tr = rooms.find(r => r.id === task.roomId);
-                  const isPending = task.status === CleaningStatus.PENDENTE;
-                  return (
-                    <div key={task.id} className="bg-white rounded-[2rem] border border-slate-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm hover:shadow-xl transition-all border-l-8 border-l-blue-600">
-                      <div className="flex items-center gap-6 flex-1">
-                        <div className={`p-5 rounded-2xl ${isPending ? 'bg-amber-50 text-amber-500' : 'bg-emerald-50 text-emerald-500 animate-pulse'}`}>
-                          <Bed size={28} />
+              {myTasks.length === 0 ? (
+                <div className="bg-white rounded-[3.5rem] border-2 border-dashed border-slate-200 p-24 text-center shadow-inner">
+                  <div className="w-28 h-28 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-8 shadow-sm">
+                    <CheckCircle2 size={56} className="text-slate-200" />
+                  </div>
+                  <h3 className="text-slate-900 font-black text-2xl mb-2">Sem novas ordens!</h3>
+                  <p className="text-slate-400 font-bold text-xs uppercase tracking-widest">Bom descanso ou aguarde o gerente.</p>
+                </div>
+              ) : (
+                <div className="grid gap-6">
+                  {myTasks.map(task => {
+                    const tr = rooms.find(r => r.id === task.roomId);
+                    const isNew = task.status === CleaningStatus.PENDENTE;
+                    return (
+                      <div key={task.id} className="bg-white rounded-[3rem] border border-slate-200 p-10 flex flex-col items-center justify-between gap-10 shadow-2xl transition-all border-l-[16px] border-l-blue-600 hover:scale-[1.02]">
+                        <div className="flex items-center gap-10 w-full">
+                          <div className={`p-10 rounded-[2.5rem] ${isNew ? 'bg-amber-50 text-amber-500 shadow-amber-500/10' : 'bg-emerald-50 text-emerald-500 animate-pulse'}`}>
+                            <Bed size={48} />
+                          </div>
+                          <div className="space-y-2">
+                            <h3 className="text-6xl font-black text-slate-900 leading-none">{tr?.number}</h3>
+                            <div className="flex items-center gap-3 text-rose-500 font-black text-sm uppercase tracking-[0.3em]">
+                               <Clock size={20} /> PRAZO: {task.deadline || 'AGORA'}
+                            </div>
+                          </div>
                         </div>
-                        <div className="space-y-1">
-                          <h3 className="text-2xl font-black text-slate-900">{tr?.number}</h3>
-                          <p className="text-rose-500 font-black text-[10px] uppercase">ENTREGA ATÉ: {task.deadline || 'IMEDIATO'}</p>
-                        </div>
+                        <button 
+                          onClick={() => isNew ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
+                          className="w-full py-8 bg-slate-950 text-white font-black rounded-[2.5rem] hover:bg-blue-600 transition-all flex items-center justify-center gap-5 shadow-2xl active:scale-95 text-xl tracking-[0.1em] uppercase"
+                        >
+                          {isNew ? <><Camera size={28} /> REGISTRAR INÍCIO</> : <><Play size={28} /> CONTINUAR LIMPEZA</>}
+                        </button>
                       </div>
-                      <button 
-                        onClick={() => isPending ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
-                        className="w-full sm:w-auto px-10 py-5 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95"
-                      >
-                        {isPending ? <><Camera size={18} /> REGISTRAR INÍCIO</> : <><Play size={18} /> CONTINUAR</>}
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </section>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
         </div>
       ) : (
-        /* ÁREA DE EXECUÇÃO (KARINE / STAFF) */
-        <div className="bg-white rounded-[2.5rem] shadow-2xl overflow-hidden border border-slate-100 animate-in slide-in-from-bottom-10">
-          <div className="bg-slate-900 p-8 text-white">
-            <div className="flex justify-between items-center mb-6">
+        /* TELA DE EXECUÇÃO ATIVA (ROSE / KARINE) */
+        <div className="bg-white rounded-[4rem] shadow-2xl overflow-hidden border border-slate-100 animate-in slide-in-from-bottom-10 h-full max-h-[96vh] flex flex-col">
+          <div className="bg-slate-950 p-12 text-white shrink-0">
+            <div className="flex justify-between items-center mb-8">
               <div>
-                <h2 className="text-4xl font-black mb-2">{room?.number}</h2>
-                <div className="flex items-center gap-2 text-emerald-400 font-black text-3xl">
-                  <Timer size={28} /> {formatTime(elapsed)}
+                <h2 className="text-7xl font-black mb-4 tracking-tighter">{room?.number}</h2>
+                <div className="flex items-center gap-5 text-emerald-400 font-black text-6xl">
+                  <Timer size={48} /> {formatTime(elapsed)}
                 </div>
               </div>
-              <button onClick={() => setActiveTaskId(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full">
-                <X size={24} />
+              <button onClick={() => setActiveTaskId(null)} className="p-6 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
+                <X size={48} />
               </button>
             </div>
           </div>
 
-          <div className="p-6 sm:p-8 space-y-10">
-            <section className="space-y-4">
-              <h3 className="font-black text-lg flex items-center gap-3 text-slate-900 uppercase">
-                <ClipboardCheck size={20} className="text-blue-500" /> Checklist Operacional
+          <div className="flex-1 overflow-y-auto p-10 sm:p-14 space-y-16 pb-48 custom-scrollbar">
+            <section className="space-y-8">
+              <h3 className="font-black text-3xl flex items-center gap-5 text-slate-900 uppercase tracking-tighter">
+                <ClipboardCheck size={40} className="text-blue-600" /> Checklist Operacional
               </h3>
-              <div className="grid grid-cols-1 gap-2">
+              <div className="grid grid-cols-1 gap-5">
                 {Object.keys(activeTask.checklist).map(item => (
-                  <label key={item} className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-200' : 'bg-slate-50 border-slate-100'}`}>
-                    <input type="checkbox" checked={activeTask.checklist[item]} onChange={() => handleToggleCheck(item)} className="w-6 h-6 rounded-lg text-emerald-600" />
-                    <span className={`font-bold text-sm ${activeTask.checklist[item] ? 'text-emerald-700' : 'text-slate-700'}`}>{item}</span>
+                  <label key={item} className={`flex items-center gap-8 p-10 rounded-[2.5rem] border-2 transition-all cursor-pointer ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400 shadow-inner' : 'bg-slate-50 border-slate-100'}`}>
+                    <input type="checkbox" checked={activeTask.checklist[item]} onChange={() => handleToggleCheck(item)} className="w-12 h-12 rounded-3xl text-emerald-600 border-slate-300 shadow-sm" />
+                    <span className={`font-black text-xl leading-snug ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
                   </label>
                 ))}
               </div>
             </section>
 
-            <section className="space-y-4">
-              <h3 className="font-black text-lg flex items-center gap-3 text-amber-600 uppercase">
-                <ShieldCheck size={24} /> Auditoria Fator Mamãe
+            <section className="space-y-8">
+              <h3 className="font-black text-3xl flex items-center gap-5 text-amber-600 uppercase tracking-tighter">
+                <ShieldCheck size={48} /> Auditoria Fator Mamãe
               </h3>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <p className="text-base font-bold text-slate-400 uppercase tracking-[0.2em] px-2">Fotos reais dos cantos e detalhes</p>
+              <div className="grid grid-cols-2 gap-8">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const photo = activeTask.photos?.find(p => p.type === req.id);
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center overflow-hidden hover:border-amber-400 transition-all shadow-inner group relative">
+                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-square bg-slate-50 border-4 border-dashed border-slate-200 rounded-[3.5rem] flex flex-col items-center justify-center overflow-hidden hover:border-amber-400 transition-all shadow-inner relative">
                       {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : 
-                      <><Camera size={24} className="text-slate-300" /><span className="text-[8px] text-slate-400 uppercase font-black px-2 text-center tracking-widest mt-1">{req.label}</span></>}
+                      <><Camera size={56} className="text-slate-300" /><span className="text-xs text-slate-400 uppercase font-black px-8 text-center tracking-tighter mt-4 leading-tight">{req.label}</span></>}
                     </button>
                   )
                 })}
               </div>
             </section>
 
-            <button 
-              disabled={!Object.values(activeTask.checklist).every(v => v)} 
-              onClick={handleComplete} 
-              className={`w-full py-6 rounded-3xl font-black text-xl shadow-xl transition-all ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700' : 'bg-slate-100 text-slate-300'}`}
-            >
-              FINALIZAR E ENVIAR AUDITORIA <ArrowRight size={24} className="ml-2 inline" />
-            </button>
+            <div className="fixed bottom-12 left-12 right-12 z-[100]">
+              <button 
+                disabled={!Object.values(activeTask.checklist).every(v => v)} 
+                onClick={handleComplete} 
+                className={`w-full py-10 rounded-[3rem] font-black text-3xl shadow-[0_30px_60px_rgba(0,0,0,0.4)] transition-all flex items-center justify-center gap-6 uppercase tracking-[0.1em] ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white hover:bg-emerald-700 active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+              >
+                ENTREGAR E LIBERAR <ArrowRight size={48} />
+              </button>
+            </div>
           </div>
         </div>
       )}

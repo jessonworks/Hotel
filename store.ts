@@ -118,12 +118,12 @@ export const useStore = create<AppState>()(
 
       checkConnection: async () => {
         if (!SUPABASE_URL || !SUPABASE_KEY) {
-          set({ isSupabaseConnected: false, connectionError: 'Aguardando variáveis do build...' });
+          set({ isSupabaseConnected: false, connectionError: 'Configurando chaves...' });
           return;
         }
         
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Erro no Supabase Client' });
+          set({ isSupabaseConnected: false, connectionError: 'Erro de Init Supabase' });
           return;
         }
 
@@ -133,7 +133,7 @@ export const useStore = create<AppState>()(
           set({ isSupabaseConnected: true, connectionError: null });
           if (!get().isDemoMode && get().currentUser) get().syncData();
         } catch (err: any) {
-          set({ isSupabaseConnected: false, connectionError: 'Banco Offline ou Tabela Inexistente' });
+          set({ isSupabaseConnected: false, connectionError: 'Falha de Conexão' });
         }
       },
 
@@ -158,15 +158,22 @@ export const useStore = create<AppState>()(
             supabase.from('users').select('*')
           ]);
 
-          if (roomsData) set({ rooms: roomsData.map(r => ({
-            id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category,
-            status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count,
-            hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url
-          }))});
-          if (usersData) set({ users: usersData.map(u => ({
-            id: u.id, email: u.email, fullName: u.full_name, role: inferRoleByEmail(u.email),
-            password: u.password, avatarUrl: u.avatar_url
-          }))});
+          // Somente sobrescreve os quartos se houver dados no banco
+          if (roomsData && roomsData.length > 0) {
+            set({ rooms: roomsData.map(r => ({
+              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category,
+              status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count,
+              hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url
+            }))});
+          }
+          
+          if (usersData && usersData.length > 0) {
+             set({ users: usersData.map(u => ({
+              id: u.id, email: u.email, fullName: u.full_name, role: inferRoleByEmail(u.email),
+              password: u.password, avatarUrl: u.avatar_url
+            }))});
+          }
+          
           if (tasksData) set({ tasks: tasksData.map(t => ({
             id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name,
             status: t.status, startedAt: t.started_at, completedAt: t.completed_at,
@@ -174,19 +181,23 @@ export const useStore = create<AppState>()(
             fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make,
             checklist: t.checklist || {}, photos: t.photos || []
           }))});
+          
           if (guestsData) set({ guests: guestsData.map(g => ({
             id: g.id, fullName: g.full_name, document: g.document, checkIn: g.check_in,
             checkOut: g.check_out, roomId: g.room_id, checkedOutAt: g.checked_out_at,
             dailyRate: g.daily_rate || 150, totalValue: g.total_value, paymentMethod: g.payment_method
           }))});
+          
           if (invData) set({ inventory: invData.map(i => ({
             id: i.id, name: i.name, category: i.category, quantity: i.quantity,
             minStock: i.min_stock, price: i.price || (i.unit_cost * 1.5), unitCost: i.unit_cost
           }))});
+          
           if (annData) set({ announcements: annData.map(a => ({
             id: a.id, authorName: a.author_name, content: a.content,
             createdAt: a.created_at, priority: a.priority
           }))});
+          
           if (transData) set({ transactions: transData.map(t => ({
             id: t.id, date: t.date, type: t.type, category: t.category,
             amount: t.amount, description: t.description
@@ -261,7 +272,22 @@ export const useStore = create<AppState>()(
 
       updateRoomStatus: async (roomId, status) => {
         if (supabase && !get().isDemoMode) {
-          await supabase.from('rooms').upsert({ id: roomId, status });
+          // Garante que o quarto existe no banco antes de atualizar status
+          const room = get().rooms.find(r => r.id === roomId);
+          if (room) {
+            await supabase.from('rooms').upsert({ 
+              id: roomId, 
+              status,
+              number: room.number,
+              floor: room.floor,
+              category: room.category,
+              type: room.type,
+              max_guests: room.maxGuests,
+              beds_count: room.bedsCount,
+              has_minibar: room.hasMinibar,
+              has_balcony: room.hasBalcony
+            });
+          }
           get().syncData();
         } else {
           set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, status } : r) }));
@@ -453,7 +479,7 @@ export const useStore = create<AppState>()(
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] })
     }),
     {
-      name: 'hospedapro-v71-final-build',
+      name: 'hospedapro-v73-stable-roles',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => {
         state?.checkConnection();

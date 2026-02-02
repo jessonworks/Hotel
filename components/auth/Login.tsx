@@ -15,6 +15,14 @@ const Login: React.FC = () => {
     checkConnection();
   }, [checkConnection]);
 
+  // Função auxiliar para inferir o cargo pelo e-mail (usada no modo Demo/Fallback)
+  const getRoleFromEmail = (emailStr: string): UserRole => {
+    const e = emailStr.toLowerCase();
+    if (e.includes('admin')) return UserRole.ADMIN;
+    if (e.includes('gerente')) return UserRole.MANAGER;
+    return UserRole.STAFF;
+  };
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -23,7 +31,8 @@ const Login: React.FC = () => {
       const success = await login(email, password);
       if (!success) {
         if (!isSupabaseConnected) {
-          setError('Sem conexão com a nuvem. Verifique suas chaves na Vercel.');
+          // Se não houver conexão, entra no modo demo com o cargo correto baseado no e-mail
+          enterDemoMode(getRoleFromEmail(email));
         } else {
           setError('E-mail ou senha incorretos conforme banco de dados.');
         }
@@ -38,14 +47,17 @@ const Login: React.FC = () => {
   const handleQuickLogin = async (e: string, p: string) => {
     setEmail(e);
     setPassword(p);
-    // Tenta logar automaticamente se estiver online, senão entra em demo
+    
     if (isSupabaseConnected) {
       setLoading(true);
       const ok = await login(e, p);
-      if (!ok) enterDemoMode(e.includes('admin') ? UserRole.ADMIN : UserRole.STAFF);
+      if (!ok) {
+        // Se a conta não existir no banco real, entra no modo demo com o cargo correto
+        enterDemoMode(getRoleFromEmail(e), { email: e, fullName: e.split('@')[0].toUpperCase() });
+      }
       setLoading(false);
     } else {
-      enterDemoMode(e.includes('admin') ? UserRole.ADMIN : UserRole.STAFF);
+      enterDemoMode(getRoleFromEmail(e), { email: e, fullName: e.split('@')[0].toUpperCase() });
     }
   };
 
@@ -68,7 +80,7 @@ const Login: React.FC = () => {
         <div className="bg-slate-50/80 border border-slate-200 p-6 rounded-3xl space-y-4 shadow-inner">
           <div className="flex items-center gap-3 text-slate-900 text-[10px] font-black uppercase tracking-[0.2em]">
             <Play className="fill-blue-600 text-blue-600" size={14} />
-            Acesso Rápido ao Banco
+            Acesso Rápido {isSupabaseConnected ? '(Online)' : '(Demo)'}
           </div>
           
           <div className="grid grid-cols-1 gap-2">
@@ -141,7 +153,7 @@ const Login: React.FC = () => {
             </div>
           </div>
           <button type="submit" disabled={loading} className="w-full py-5 bg-slate-900 text-white font-black rounded-3xl shadow-xl hover:bg-blue-600 transition-all transform active:scale-95 flex items-center justify-center gap-3 uppercase tracking-widest text-sm">
-            {loading ? <Loader2 className="animate-spin" /> : 'Acessar Nuvem'}
+            {loading ? <Loader2 className="animate-spin" /> : 'Acessar'}
           </button>
         </form>
 

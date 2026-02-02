@@ -1,0 +1,7 @@
+{
+  "name": "HospedaPro",
+  "description": "Hotel Management System",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}

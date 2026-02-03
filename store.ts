@@ -102,7 +102,6 @@ export const useStore = create<AppState>()(
         if (!supabase) return null;
         try {
           let fileBody: any = file;
-          // Se for base64, converter para Blob
           if (typeof file === 'string' && file.startsWith('data:')) {
             const res = await fetch(file);
             fileBody = await res.blob();
@@ -110,29 +109,30 @@ export const useStore = create<AppState>()(
           
           const { data, error } = await supabase.storage
             .from('hospedapro')
-            .upload(path, fileBody, { upsert: true });
+            .upload(path, fileBody, { upsert: true, cacheControl: '3600' });
 
           if (error) throw error;
           const { data: { publicUrl } } = supabase.storage.from('hospedapro').getPublicUrl(data.path);
           return publicUrl;
         } catch (e) {
-          console.error("Upload Error:", e);
+          console.error("Storage Error:", e);
           return null;
         }
       },
 
       checkConnection: async () => {
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Offline' });
+          set({ isSupabaseConnected: false, connectionError: 'Chaves ausentes' });
           return;
         }
         try {
-          const { error } = await supabase.from('users').select('id').limit(1);
+          const { data, error } = await supabase.from('users').select('id').limit(1);
           if (error) throw error;
           set({ isSupabaseConnected: true, connectionError: null });
           if (get().currentUser) get().syncData();
         } catch (err) {
-          set({ isSupabaseConnected: false, connectionError: 'Erro de Conexão' });
+          console.warn("Connection attempt failed:", err);
+          set({ isSupabaseConnected: false, connectionError: 'Falha de conexão' });
         }
       },
 
@@ -153,7 +153,7 @@ export const useStore = create<AppState>()(
 
           if (roomsData?.length) {
             set({ rooms: (roomsData as any[]).map(r => ({ 
-              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony 
+              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url 
             }))});
           }
 
@@ -168,6 +168,7 @@ export const useStore = create<AppState>()(
       login: async (email, password) => {
         const lowerEmail = email.toLowerCase();
         
+        // 1. Tenta buscar no Banco de Dados
         if (supabase) {
            try {
              const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', password).single();
@@ -179,18 +180,23 @@ export const useStore = create<AppState>()(
            } catch(e) {}
         }
 
+        // 2. Tenta buscar nos usuários locais iniciais (Dev/Jeff/Rose/João)
         const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === password);
         if (localUser) {
           set({ currentUser: localUser });
-          // Se estamos online mas o usuário só existe localmente, vamos subir ele para o banco
+          // Se estamos online (as chaves existem), força a criação desse usuário no Supabase
           if (supabase) {
-            await supabase.from('users').upsert({
-              id: localUser.id,
-              email: localUser.email,
-              full_name: localUser.fullName,
-              role: localUser.role,
-              password: localUser.password
-            });
+            try {
+              await supabase.from('users').upsert({
+                id: localUser.id,
+                email: localUser.email,
+                full_name: localUser.fullName,
+                role: localUser.role,
+                password: localUser.password
+              });
+            } catch(e) {
+              console.warn("Could not sync local user to cloud yet:", e);
+            }
           }
           return true;
         }
@@ -203,7 +209,7 @@ export const useStore = create<AppState>()(
         
         let finalUpd = { ...upd };
         if (upd.avatarUrl && upd.avatarUrl.startsWith('data:')) {
-          const url = await get().uploadFile(upd.avatarUrl, `avatars/${user.id}.jpg`);
+          const url = await get().uploadFile(upd.avatarUrl, `avatars/${user.id}_${Date.now()}.jpg`);
           if (url) finalUpd.avatarUrl = url;
         }
 
@@ -223,11 +229,12 @@ export const useStore = create<AppState>()(
 
         let finalPhotos = updates.photos || task.photos;
         
-        // Se houver fotos novas em base64, fazer upload para o Storage
+        // Processamento das fotos no Banco de Fotos (Supabase Storage)
         if (updates.photos && supabase) {
           const uploadedPhotos = await Promise.all(updates.photos.map(async (p, idx) => {
             if (p.url.startsWith('data:')) {
-              const path = `tasks/${taskId}/${p.category}_${idx}.jpg`;
+              const fileName = `${p.category}_${Date.now()}_${idx}.jpg`;
+              const path = `tasks/${taskId}/${fileName}`;
               const url = await get().uploadFile(p.url, path);
               return { ...p, url: url || p.url };
             }
@@ -246,7 +253,8 @@ export const useStore = create<AppState>()(
             photos: finalPhotos, 
             started_at: finalUpdates.startedAt || task.startedAt,
             completed_at: finalUpdates.completedAt || task.completedAt,
-            duration_minutes: finalUpdates.durationMinutes || task.durationMinutes
+            duration_minutes: finalUpdates.durationMinutes || task.durationMinutes,
+            fator_mamae_verified: finalUpdates.fatorMamaeVerified ?? task.fatorMamaeVerified
           }).eq('id', taskId);
         }
       },

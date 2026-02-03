@@ -36,6 +36,7 @@ interface AppState {
   updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
   addUser: (user: Omit<User, 'id'>) => Promise<void>;
   removeUser: (id: string) => Promise<void>;
+  uploadFile: (file: File | string, path: string) => Promise<string | null>;
   
   updateRoomStatus: (roomId: string, status: RoomStatus) => Promise<void>;
   updateRoomICal: (roomId: string, url: string) => Promise<void>;
@@ -74,11 +75,10 @@ const generateInitialRooms = (): Room[] => {
   return rooms;
 };
 
-// USUÁRIOS OFICIAIS DO SISTEMA
 const INITIAL_USERS: User[] = [
   { id: 'u-dev', email: 'dev@hotel.com', fullName: 'Dev (Sistema)', role: UserRole.ADMIN, password: 'dev' },
-  { id: 'u-jeff', email: 'jeff@hotel.com', fullName: 'Jeff', role: UserRole.ADMIN, password: 'jeff' },
-  { id: 'u-rose', email: 'rose@hotel.com', fullName: 'Rose', role: UserRole.STAFF, password: 'rose' },
+  { id: 'u-jeff', email: 'jeff@hotel.com', fullName: 'Jeff', role: UserRole.ADMIN, password: 'jeff123' },
+  { id: 'u-rose', email: 'rose@hotel.com', fullName: 'Rose', role: UserRole.STAFF, password: 'rose123' },
   { id: 'u-joao', email: 'joao@hotel.com', fullName: 'João', role: UserRole.STAFF, password: 'joao' }
 ];
 
@@ -97,6 +97,29 @@ export const useStore = create<AppState>()(
       isSupabaseConnected: false,
       connectionError: null,
       managerBriefing: null,
+
+      uploadFile: async (file, path) => {
+        if (!supabase) return null;
+        try {
+          let fileBody: any = file;
+          // Se for base64, converter para Blob
+          if (typeof file === 'string' && file.startsWith('data:')) {
+            const res = await fetch(file);
+            fileBody = await res.blob();
+          }
+          
+          const { data, error } = await supabase.storage
+            .from('hospedapro')
+            .upload(path, fileBody, { upsert: true });
+
+          if (error) throw error;
+          const { data: { publicUrl } } = supabase.storage.from('hospedapro').getPublicUrl(data.path);
+          return publicUrl;
+        } catch (e) {
+          console.error("Upload Error:", e);
+          return null;
+        }
+      },
 
       checkConnection: async () => {
         if (!supabase) {
@@ -124,7 +147,7 @@ export const useStore = create<AppState>()(
           
           if (usersData?.length) {
             set({ users: (usersData as any[]).map(u => ({ 
-              id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password 
+              id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password, avatarUrl: u.avatar_url 
             }))});
           }
 
@@ -145,26 +168,87 @@ export const useStore = create<AppState>()(
       login: async (email, password) => {
         const lowerEmail = email.toLowerCase();
         
-        // 1. Tenta login via Supabase (Cloud)
         if (supabase) {
            try {
              const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', password).single();
              if (data && !error) {
-               set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password } });
+               set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password, avatarUrl: data.avatar_url } });
                await get().syncData();
                return true;
              }
            } catch(e) {}
         }
 
-        // 2. Fallback: Login Local (se offline ou se for um dos 4 iniciais ainda não sincronizados)
         const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === password);
         if (localUser) {
           set({ currentUser: localUser });
+          // Se estamos online mas o usuário só existe localmente, vamos subir ele para o banco
+          if (supabase) {
+            await supabase.from('users').upsert({
+              id: localUser.id,
+              email: localUser.email,
+              full_name: localUser.fullName,
+              role: localUser.role,
+              password: localUser.password
+            });
+          }
           return true;
         }
-
         return false;
+      },
+
+      updateCurrentUser: async (upd) => {
+        const user = get().currentUser;
+        if (!user) return;
+        
+        let finalUpd = { ...upd };
+        if (upd.avatarUrl && upd.avatarUrl.startsWith('data:')) {
+          const url = await get().uploadFile(upd.avatarUrl, `avatars/${user.id}.jpg`);
+          if (url) finalUpd.avatarUrl = url;
+        }
+
+        set({ currentUser: { ...user, ...finalUpd } });
+        if (supabase) {
+          await supabase.from('users').update({ 
+            full_name: finalUpd.fullName || user.fullName,
+            email: finalUpd.email || user.email,
+            avatar_url: finalUpd.avatarUrl || user.avatarUrl
+          }).eq('id', user.id);
+        }
+      },
+
+      updateTask: async (taskId, updates) => {
+        const task = get().tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        let finalPhotos = updates.photos || task.photos;
+        
+        // Se houver fotos novas em base64, fazer upload para o Storage
+        if (updates.photos && supabase) {
+          const uploadedPhotos = await Promise.all(updates.photos.map(async (p, idx) => {
+            if (p.url.startsWith('data:')) {
+              const path = `tasks/${taskId}/${p.category}_${idx}.jpg`;
+              const url = await get().uploadFile(p.url, path);
+              return { ...p, url: url || p.url };
+            }
+            return p;
+          }));
+          finalPhotos = uploadedPhotos;
+        }
+
+        const finalUpdates = { ...updates, photos: finalPhotos };
+        set(state => ({ tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...finalUpdates } : t) }));
+        
+        if (supabase) {
+          await supabase.from('tasks').update({
+            status: finalUpdates.status || task.status,
+            checklist: finalUpdates.checklist || task.checklist,
+            photos: finalPhotos, 
+            started_at: finalUpdates.startedAt || task.startedAt,
+            completed_at: finalUpdates.completedAt || task.completedAt,
+            duration_minutes: finalUpdates.durationMinutes || task.durationMinutes
+          }).eq('id', taskId);
+        }
       },
 
       updateRoomStatus: async (roomId, status) => {
@@ -201,16 +285,6 @@ export const useStore = create<AppState>()(
             checklist: newTask.checklist, photos: newTask.photos
           });
           await supabase.from('rooms').update({ status: RoomStatus.LIMPANDO }).eq('id', data.roomId);
-        }
-      },
-
-      updateTask: async (taskId, updates) => {
-        set(state => ({ tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t) }));
-        if (supabase) {
-          await supabase.from('tasks').update({
-            status: updates.status, checklist: updates.checklist, photos: updates.photos, 
-            started_at: updates.startedAt, completed_at: updates.completedAt, duration_minutes: updates.durationMinutes
-          }).eq('id', taskId);
         }
       },
 
@@ -309,7 +383,6 @@ export const useStore = create<AppState>()(
           ]);
         }
       },
-      updateCurrentUser: async (upd) => { if (get().currentUser) set({ currentUser: { ...get().currentUser!, ...upd } }); },
       updateUserPassword: async (id, p) => { 
         set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); 
         if (supabase) {
@@ -325,7 +398,7 @@ export const useStore = create<AppState>()(
       }
     }),
     {
-      name: 'hospedapro-v3-prod',
+      name: 'hospedapro-v3-final',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => { state?.checkConnection(); },
     }

@@ -16,6 +16,14 @@ export const supabase = SUPABASE_URL && SUPABASE_ANON_KEY
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
 
+// Helper para normalizar o cargo vindo do banco ou local
+const normalizeRole = (role: string): UserRole => {
+  const r = (role || '').toLowerCase();
+  if (r.includes('admin')) return UserRole.ADMIN;
+  if (r.includes('gerente') || r.includes('manager')) return UserRole.MANAGER;
+  return UserRole.STAFF; // Default para limpeza/colaborador
+};
+
 interface AppState {
   currentUser: User | null;
   users: User[];
@@ -75,11 +83,16 @@ const generateInitialRooms = (): Room[] => {
   return rooms;
 };
 
+// LISTA ATUALIZADA COM TODOS OS USUÁRIOS DO SEU SUPABASE
 const INITIAL_USERS: User[] = [
   { id: 'u-dev', email: 'dev@hotel.com', fullName: 'Dev (Sistema)', role: UserRole.ADMIN, password: 'dev' },
-  { id: 'u-jeff', email: 'jeff@hotel.com', fullName: 'Jeff', role: UserRole.ADMIN, password: 'jeff123' },
+  { id: 'u-admin', email: 'admin@hotel.com', fullName: 'Administrador Principal', role: UserRole.ADMIN, password: 'hotel2024' },
+  { id: 'u-gerente', email: 'gerente@hotel.com', fullName: 'Gerente Operacional', role: UserRole.MANAGER, password: 'gerente123' },
   { id: 'u-rose', email: 'rose@hotel.com', fullName: 'Rose', role: UserRole.STAFF, password: 'rose123' },
-  { id: 'u-joao', email: 'joao@hotel.com', fullName: 'João', role: UserRole.STAFF, password: 'joao' }
+  { id: 'u-jeff', email: 'jeff@hotel.com', fullName: 'Jeff', role: UserRole.ADMIN, password: 'jeff123' },
+  { id: 'u-karine', email: 'karine@hotel.com', fullName: 'Karine', role: UserRole.MANAGER, password: '123' },
+  { id: 'u-staff1', email: 'limpeza1@hotel.com', fullName: 'Equipe Limpeza A', role: UserRole.STAFF, password: '123456' },
+  { id: 'u-staff2', email: 'limpeza2@hotel.com', fullName: 'Equipe Limpeza B', role: UserRole.STAFF, password: '123456' }
 ];
 
 export const useStore = create<AppState>()(
@@ -106,34 +119,21 @@ export const useStore = create<AppState>()(
             const res = await fetch(file);
             fileBody = await res.blob();
           }
-          
-          const { data, error } = await supabase.storage
-            .from('hospedapro')
-            .upload(path, fileBody, { upsert: true, cacheControl: '3600' });
-
+          const { data, error } = await supabase.storage.from('hospedapro').upload(path, fileBody, { upsert: true });
           if (error) throw error;
           const { data: { publicUrl } } = supabase.storage.from('hospedapro').getPublicUrl(data.path);
           return publicUrl;
-        } catch (e) {
-          console.error("Storage Error:", e);
-          return null;
-        }
+        } catch (e) { return null; }
       },
 
       checkConnection: async () => {
-        if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Chaves ausentes' });
-          return;
-        }
+        if (!supabase) { set({ isSupabaseConnected: false }); return; }
         try {
-          const { data, error } = await supabase.from('users').select('id').limit(1);
+          const { error } = await supabase.from('users').select('id').limit(1);
           if (error) throw error;
           set({ isSupabaseConnected: true, connectionError: null });
           if (get().currentUser) get().syncData();
-        } catch (err) {
-          console.warn("Connection attempt failed:", err);
-          set({ isSupabaseConnected: false, connectionError: 'Falha de conexão' });
-        }
+        } catch (err) { set({ isSupabaseConnected: false }); }
       },
 
       syncData: async () => {
@@ -147,7 +147,7 @@ export const useStore = create<AppState>()(
           
           if (usersData?.length) {
             set({ users: (usersData as any[]).map(u => ({ 
-              id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password, avatarUrl: u.avatar_url 
+              id: u.id, email: u.email, fullName: u.full_name, role: normalizeRole(u.role), password: u.password, avatarUrl: u.avatar_url 
             }))});
           }
 
@@ -162,41 +162,41 @@ export const useStore = create<AppState>()(
               id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, checklist: t.checklist || {}, photos: t.photos || [] 
             }))});
           }
-        } catch (e) { console.error("Sync Error:", e); }
+        } catch (e) {}
       },
 
       login: async (email, password) => {
-        const lowerEmail = email.toLowerCase();
+        const lowerEmail = (email || '').toLowerCase().trim();
+        const pwd = (password || '').trim();
         
-        // 1. Tenta buscar no Banco de Dados
+        // 1. Tenta Supabase
         if (supabase) {
            try {
-             const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', password).single();
+             const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', pwd).single();
              if (data && !error) {
-               set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password, avatarUrl: data.avatar_url } });
+               const u: User = { 
+                 id: data.id, email: data.email, fullName: data.full_name, 
+                 role: normalizeRole(data.role), password: data.password, avatarUrl: data.avatar_url 
+               };
+               set({ currentUser: u });
                await get().syncData();
                return true;
              }
            } catch(e) {}
         }
 
-        // 2. Tenta buscar nos usuários locais iniciais (Dev/Jeff/Rose/João)
-        const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === password);
+        // 2. Fallback Local (Sincronizado com o print)
+        const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === pwd);
         if (localUser) {
-          set({ currentUser: localUser });
-          // Se estamos online (as chaves existem), força a criação desse usuário no Supabase
+          set({ currentUser: { ...localUser, role: normalizeRole(localUser.role) } });
+          // Se estiver online mas o usuário só existir local, tenta criar no banco
           if (supabase) {
             try {
               await supabase.from('users').upsert({
-                id: localUser.id,
-                email: localUser.email,
-                full_name: localUser.fullName,
-                role: localUser.role,
-                password: localUser.password
+                id: localUser.id, email: localUser.email, full_name: localUser.fullName,
+                role: localUser.role, password: localUser.password
               });
-            } catch(e) {
-              console.warn("Could not sync local user to cloud yet:", e);
-            }
+            } catch(e) {}
           }
           return true;
         }
@@ -206,13 +206,11 @@ export const useStore = create<AppState>()(
       updateCurrentUser: async (upd) => {
         const user = get().currentUser;
         if (!user) return;
-        
         let finalUpd = { ...upd };
         if (upd.avatarUrl && upd.avatarUrl.startsWith('data:')) {
-          const url = await get().uploadFile(upd.avatarUrl, `avatars/${user.id}_${Date.now()}.jpg`);
+          const url = await get().uploadFile(upd.avatarUrl, `avatars/${user.id}.jpg`);
           if (url) finalUpd.avatarUrl = url;
         }
-
         set({ currentUser: { ...user, ...finalUpd } });
         if (supabase) {
           await supabase.from('users').update({ 
@@ -226,26 +224,19 @@ export const useStore = create<AppState>()(
       updateTask: async (taskId, updates) => {
         const task = get().tasks.find(t => t.id === taskId);
         if (!task) return;
-
         let finalPhotos = updates.photos || task.photos;
-        
-        // Processamento das fotos no Banco de Fotos (Supabase Storage)
         if (updates.photos && supabase) {
           const uploadedPhotos = await Promise.all(updates.photos.map(async (p, idx) => {
             if (p.url.startsWith('data:')) {
-              const fileName = `${p.category}_${Date.now()}_${idx}.jpg`;
-              const path = `tasks/${taskId}/${fileName}`;
-              const url = await get().uploadFile(p.url, path);
+              const url = await get().uploadFile(p.url, `tasks/${taskId}/${p.category}_${idx}.jpg`);
               return { ...p, url: url || p.url };
             }
             return p;
           }));
           finalPhotos = uploadedPhotos;
         }
-
         const finalUpdates = { ...updates, photos: finalPhotos };
         set(state => ({ tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...finalUpdates } : t) }));
-        
         if (supabase) {
           await supabase.from('tasks').update({
             status: finalUpdates.status || task.status,
@@ -261,31 +252,25 @@ export const useStore = create<AppState>()(
 
       updateRoomStatus: async (roomId, status) => {
         set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, status } : r) }));
-        if (supabase) {
-          await supabase.from('rooms').update({ status }).eq('id', roomId);
-        }
+        if (supabase) await supabase.from('rooms').update({ status }).eq('id', roomId);
       },
 
       createTask: async (data) => {
         const existing = get().tasks.find(t => t.roomId === data.roomId && t.status !== CleaningStatus.APROVADO);
         if (existing) return;
-
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
         const assignedUser = get().users.find(u => u.id === data.assignedTo);
         const template = CHECKLIST_TEMPLATES[data.roomId!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        
         const newTask: CleaningTask = { 
           id, roomId: data.roomId!, assignedTo: data.assignedTo, assignedByName: assignedUser?.fullName || 'Staff', 
           status: CleaningStatus.PENDENTE, deadline: data.deadline, notes: data.notes, bedsToMake: room?.bedsCount || 0, 
           checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}), photos: [], fatorMamaeVerified: false 
         };
-
         set(state => ({ 
           tasks: [...state.tasks, newTask], 
           rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) 
         }));
-
         if (supabase) {
           await supabase.from('tasks').insert({
             id: newTask.id, room_id: newTask.roomId, assigned_to: newTask.assignedTo, assigned_by_name: newTask.assignedByName,
@@ -299,12 +284,10 @@ export const useStore = create<AppState>()(
       approveTask: async (taskId) => {
         const task = get().tasks.find(t => t.id === taskId);
         if (!task) return;
-        
         set(state => ({ 
           tasks: state.tasks.filter(t => t.id !== taskId),
           rooms: state.rooms.map(r => r.id === task.roomId ? { ...r, status: RoomStatus.DISPONIVEL } : r) 
         }));
-
         if (supabase) {
           await Promise.all([
             supabase.from('tasks').update({ status: CleaningStatus.APROVADO }).eq('id', taskId),
@@ -316,42 +299,30 @@ export const useStore = create<AppState>()(
 
       logout: () => set({ currentUser: null, tasks: [] }),
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [], users: INITIAL_USERS }),
-      syncICal: async (roomId) => { console.log("iCal:", roomId); },
+      syncICal: async (roomId) => {},
       addLaundry: (item) => set((state) => ({ laundry: [...state.laundry, { ...item, id: `l-${Date.now()}`, lastUpdated: new Date().toISOString() }] })),
       moveLaundry: (itemId, stage) => set((state) => ({ laundry: state.laundry.map(l => l.id === itemId ? { ...l, stage, lastUpdated: new Date().toISOString() } : l) })),
       addUser: async (userData) => { 
         const id = `u-${Date.now()}`; 
         set(state => ({ users: [...state.users, { ...userData, id }] }));
         if (supabase) {
-          await supabase.from('users').insert({
-            id, email: userData.email, full_name: userData.fullName, role: userData.role, password: userData.password
-          });
+          await supabase.from('users').insert({ id, email: userData.email, full_name: userData.fullName, role: userData.role, password: userData.password });
         }
       },
       removeUser: async (id) => { 
         set(state => ({ users: state.users.filter(u => u.id !== id) }));
-        if (supabase) {
-          await supabase.from('users').delete().eq('id', id);
-        }
+        if (supabase) await supabase.from('users').delete().eq('id', id);
       },
       addTransaction: async (data) => { 
         const id = `tr-${Date.now()}`;
         const date = new Date().toISOString();
         set(state => ({ transactions: [{ ...data, id, date }, ...state.transactions] }));
-        if (supabase) {
-          await supabase.from('transactions').insert({
-            id, date, type: data.type, category: data.category, amount: data.amount, description: data.description
-          });
-        }
+        if (supabase) await supabase.from('transactions').insert({ id, date, type: data.type, category: data.category, amount: data.amount, description: data.description });
       },
       addInventory: async (item) => { 
         const id = `i-${Date.now()}`;
         set(state => ({ inventory: [...state.inventory, { ...item, id }] }));
-        if (supabase) {
-          await supabase.from('inventory').insert({
-            id, name: item.name, category: item.category, quantity: item.quantity, min_stock: item.minStock, price: item.price, unit_cost: item.unitCost
-          });
-        }
+        if (supabase) await supabase.from('inventory').insert({ id, name: item.name, category: item.category, quantity: item.quantity, min_stock: item.minStock, price: item.price, unit_cost: item.unitCost });
       },
       updateInventory: async (id, qty) => { 
         set(state => ({ inventory: state.inventory.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + qty) } : i) }));
@@ -365,9 +336,7 @@ export const useStore = create<AppState>()(
         const createdAt = new Date().toISOString();
         const authorName = get().currentUser?.fullName || 'Sistema';
         set(state => ({ announcements: [{ id, authorName, content, priority, createdAt }, ...state.announcements] }));
-        if (supabase) {
-          await supabase.from('announcements').insert({ id, author_name: authorName, content, priority, created_at: createdAt });
-        }
+        if (supabase) await supabase.from('announcements').insert({ id, author_name: authorName, content, priority, created_at: createdAt });
       },
       checkIn: async (data) => { 
         const id = `g-${Date.now()}`;
@@ -393,16 +362,12 @@ export const useStore = create<AppState>()(
       },
       updateUserPassword: async (id, p) => { 
         set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); 
-        if (supabase) {
-          await supabase.from('users').update({ password: p }).eq('id', id);
-        }
+        if (supabase) await supabase.from('users').update({ password: p }).eq('id', id);
       },
-      generateAIBriefing: async () => { set({ managerBriefing: "Briefing gerado com sucesso." }); },
+      generateAIBriefing: async () => { set({ managerBriefing: "Briefing gerado." }); },
       updateRoomICal: async (roomId, url) => {
         set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, icalUrl: url } : r) }));
-        if (supabase) {
-          await supabase.from('rooms').update({ ical_url: url }).eq('id', roomId);
-        }
+        if (supabase) await supabase.from('rooms').update({ ical_url: url }).eq('id', roomId);
       }
     }),
     {

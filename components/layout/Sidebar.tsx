@@ -12,28 +12,20 @@ const Sidebar: React.FC = () => {
 
   if (!currentUser) return null;
 
-  // Lógica resiliente com verificação de segurança para evitar erro de .toLowerCase() em undefined
-  const userRole = (currentUser?.role || '').toLowerCase();
+  // Lógica resiliente para detectar cargo
+  const roleStr = (currentUser?.role || '').toLowerCase();
   
   const filteredItems = NAVIGATION_ITEMS.filter(item => {
-    // Se for admin, vê tudo
-    if (userRole === 'admin') return true;
+    // Admin vê tudo
+    if (roleStr.includes('admin')) return true;
     
-    // Mapeamento para aceitar termos em português ou inglês salvos no banco
-    const isAdminItem = item.roles.some(r => r === UserRole.ADMIN);
-    const isManagerItem = item.roles.some(r => r === UserRole.MANAGER);
-    const isStaffItem = item.roles.some(r => r === UserRole.STAFF);
-
-    if (userRole === 'manager' || userRole === 'gerente') {
-      return isManagerItem || isStaffItem;
+    // Gerente vê quase tudo
+    if (roleStr.includes('gerente') || roleStr.includes('manager')) {
+      return item.roles.includes(UserRole.MANAGER) || item.roles.includes(UserRole.STAFF);
     }
     
-    if (userRole === 'staff' || userRole === 'funcionario' || userRole === 'colaborador') {
-      return isStaffItem;
-    }
-
-    // Fallback: se o cargo do usuário estiver explicitamente na lista do item
-    return item.roles.includes(currentUser.role as any);
+    // Staff vê apenas o operacional
+    return item.roles.includes(UserRole.STAFF);
   });
 
   return (

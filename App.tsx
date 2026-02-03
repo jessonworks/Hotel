@@ -30,10 +30,10 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  // Lógica de cargo normalizada com verificação de segurança (currentUser?.role || '')
-  const role = (currentUser?.role || '').toLowerCase();
-  const isAdmin = role === 'admin';
-  const isManager = role === 'manager' || role === 'gerente' || isAdmin;
+  // Lógica de cargo ultra-resiliente
+  const roleStr = (currentUser?.role || '').toLowerCase();
+  const isAdmin = roleStr.includes('admin');
+  const isManager = roleStr.includes('gerente') || roleStr.includes('manager') || isAdmin;
 
   return (
     <HashRouter>

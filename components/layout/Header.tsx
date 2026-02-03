@@ -3,14 +3,14 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useStore } from '../../store';
 import { 
   Bell, Search, Camera, X, LogOut, ChevronRight, Lock, 
-  CheckCircle2, Bed, Users, Cloud, Clock, ShieldAlert, Zap, AlertCircle
+  Bed, Users, Cloud, Clock, AlertCircle, Wifi, WifiOff
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const Header: React.FC = () => {
   const { 
     currentUser, updateCurrentUser, updateUserPassword, logout, rooms, 
-    guests, isSupabaseConnected, isDemoMode, cloudAvailableAgain, connectionError 
+    guests, isSupabaseConnected, connectionError 
   } = useStore();
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -73,11 +73,11 @@ const Header: React.FC = () => {
               type="text" 
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Buscar quarto ou hóspede..." 
-              className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg w-full focus:ring-2 focus:ring-blue-500 transition-all text-sm font-bold"
+              placeholder="Buscar unidade ou hóspede..." 
+              className="pl-10 pr-4 py-2 bg-slate-50 border-none rounded-lg w-full focus:ring-2 focus:ring-blue-600 transition-all text-sm font-bold"
             />
             
-            {/* Search Results Dropdown */}
+            {/* Resultados da busca */}
             {searchQuery.length > 1 && (
               <div className="absolute top-full left-0 right-0 mt-2 bg-white rounded-2xl shadow-2xl border border-slate-100 p-2 z-50 animate-in fade-in slide-in-from-top-2">
                 {searchResults.rooms.length > 0 && (
@@ -106,39 +106,21 @@ const Header: React.FC = () => {
             )}
           </div>
           
-          {/* Clock & Status */}
+          {/* Status de Operação */}
           <div className="flex items-center gap-4">
-             <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-slate-900 text-white rounded-full text-xs font-black tracking-widest shadow-lg">
+             <div className="hidden sm:flex items-center gap-2 px-4 py-1.5 bg-[#0F172A] text-white rounded-full text-xs font-black tracking-widest shadow-lg">
                 <Clock size={14} className="text-blue-400" />
-                {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                {currentTime.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
              </div>
              
-             {isDemoMode && (
-               <div className="flex items-center gap-3">
-                 <div className="flex items-center gap-2 px-4 py-1.5 bg-rose-500 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg">
-                    <ShieldAlert size={14} /> MODO DEMO
-                 </div>
-                 {cloudAvailableAgain && (
-                   <button 
-                     onClick={logout}
-                     className="flex items-center gap-2 px-4 py-1.5 bg-amber-500 text-white rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-lg animate-bounce"
-                   >
-                     <Zap size={14} /> Restaurar Nuvem
-                   </button>
-                 )}
-               </div>
-             )}
-
              <div className={`hidden lg:flex items-center gap-2 px-4 py-1.5 rounded-full border transition-all ${
                isSupabaseConnected 
-                ? 'bg-blue-600 text-white border-blue-500 shadow-[0_0_15px_rgba(37,99,235,0.4)] animate-pulse' 
-                : connectionError === 'Faltam chaves na Vercel' 
-                  ? 'bg-rose-50 text-rose-600 border-rose-100' 
-                  : 'bg-amber-50 text-amber-600 border-amber-100'
+                ? 'bg-blue-50 text-blue-600 border-blue-100' 
+                : 'bg-amber-50 text-amber-600 border-amber-100 animate-pulse'
              }`}>
-               {isSupabaseConnected ? <Cloud size={14} className="animate-bounce" /> : <AlertCircle size={14} />}
+               {isSupabaseConnected ? <Wifi size={14} /> : <WifiOff size={14} />}
                <span className="text-[10px] font-black uppercase tracking-widest">
-                 {isSupabaseConnected ? 'Nuvem OK' : connectionError || 'Local Persist'}
+                 {isSupabaseConnected ? 'Modo Online' : 'Modo Offline (Local)'}
                </span>
              </div>
           </div>
@@ -168,7 +150,7 @@ const Header: React.FC = () => {
         </div>
       </header>
 
-      {/* Profile Modal */}
+      {/* Perfil */}
       {isProfileModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-slate-900/80 backdrop-blur-md animate-in fade-in duration-300">
           <div className="bg-white w-full max-w-md h-[92vh] sm:h-auto sm:rounded-[3rem] rounded-t-[3rem] shadow-2xl overflow-hidden relative flex flex-col">
@@ -203,7 +185,7 @@ const Header: React.FC = () => {
                 <>
                   <div className="space-y-6">
                     <div className="space-y-2">
-                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Seu Nome</label>
+                      <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Nome Completo</label>
                       <input value={tempProfile.fullName} onChange={e => setTempProfile({...tempProfile, fullName: e.target.value})} className="w-full p-4 bg-slate-50 rounded-2xl font-bold outline-none" />
                     </div>
                     <div className="space-y-2">

@@ -5,15 +5,15 @@ import { createClient } from '@supabase/supabase-js';
 import { 
   User, UserRole, Room, RoomStatus, RoomType, RoomCategory,
   CleaningTask, CleaningStatus, LaundryItem, LaundryStage,
-  Guest, InventoryItem, Announcement, Transaction, PaymentMethod
+  Guest, InventoryItem, Announcement, Transaction
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
 const SUPABASE_URL = process.env.SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_ANON_KEY;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 
-export const supabase = SUPABASE_URL && SUPABASE_KEY 
-  ? createClient(SUPABASE_URL, SUPABASE_KEY) 
+export const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
 
 interface AppState {
@@ -27,14 +27,10 @@ interface AppState {
   announcements: Announcement[];
   transactions: Transaction[];
   isSupabaseConnected: boolean;
-  isDemoMode: boolean;
-  cloudAvailableAgain: boolean;
   connectionError: string | null;
   managerBriefing: string | null;
   
   login: (email: string, password?: string) => Promise<boolean>;
-  quickLogin: (role: UserRole) => Promise<void>;
-  enterDemoMode: (role: UserRole, specificUser?: Partial<User>) => void;
   logout: () => void;
   updateCurrentUser: (updates: Partial<User>) => Promise<void>;
   updateUserPassword: (userId: string, newPassword: string) => Promise<void>;
@@ -78,11 +74,19 @@ const generateInitialRooms = (): Room[] => {
   return rooms;
 };
 
+// USUÁRIOS OFICIAIS DO SISTEMA
+const INITIAL_USERS: User[] = [
+  { id: 'u-dev', email: 'dev@hotel.com', fullName: 'Dev (Sistema)', role: UserRole.ADMIN, password: 'dev' },
+  { id: 'u-jeff', email: 'jeff@hotel.com', fullName: 'Jeff', role: UserRole.ADMIN, password: 'jeff' },
+  { id: 'u-rose', email: 'rose@hotel.com', fullName: 'Rose', role: UserRole.STAFF, password: 'rose' },
+  { id: 'u-joao', email: 'joao@hotel.com', fullName: 'João', role: UserRole.STAFF, password: 'joao' }
+];
+
 export const useStore = create<AppState>()(
   persist(
     (set, get) => ({
       currentUser: null,
-      users: [],
+      users: INITIAL_USERS,
       rooms: generateInitialRooms(),
       tasks: [],
       laundry: [],
@@ -91,20 +95,21 @@ export const useStore = create<AppState>()(
       announcements: [],
       transactions: [],
       isSupabaseConnected: false,
-      isDemoMode: false,
-      cloudAvailableAgain: false,
       connectionError: null,
       managerBriefing: null,
 
       checkConnection: async () => {
-        if (!supabase) return;
+        if (!supabase) {
+          set({ isSupabaseConnected: false, connectionError: 'Offline' });
+          return;
+        }
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
           if (error) throw error;
-          set({ isSupabaseConnected: true });
+          set({ isSupabaseConnected: true, connectionError: null });
           if (get().currentUser) get().syncData();
         } catch (err) {
-          set({ isSupabaseConnected: false });
+          set({ isSupabaseConnected: false, connectionError: 'Erro de Conexão' });
         }
       },
 
@@ -118,19 +123,19 @@ export const useStore = create<AppState>()(
           ]);
           
           if (usersData?.length) {
-            set({ users: usersData.map(u => ({ 
+            set({ users: (usersData as any[]).map(u => ({ 
               id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password 
             }))});
           }
 
           if (roomsData?.length) {
-            set({ rooms: roomsData.map(r => ({ 
-              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, beds_count: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony 
+            set({ rooms: (roomsData as any[]).map(r => ({ 
+              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony 
             }))});
           }
 
           if (tasksData) {
-            set({ tasks: tasksData.map(t => ({ 
+            set({ tasks: (tasksData as any[]).map(t => ({ 
               id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, checklist: t.checklist || {}, photos: t.photos || [] 
             }))});
           }
@@ -138,20 +143,33 @@ export const useStore = create<AppState>()(
       },
 
       login: async (email, password) => {
+        const lowerEmail = email.toLowerCase();
+        
+        // 1. Tenta login via Supabase (Cloud)
         if (supabase) {
-           const { data, error } = await supabase.from('users').select('*').eq('email', email.toLowerCase()).eq('password', password).single();
-           if (data && !error) {
-             set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password }, isDemoMode: false });
-             await get().syncData();
-             return true;
-           }
+           try {
+             const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', password).single();
+             if (data && !error) {
+               set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role, password: data.password } });
+               await get().syncData();
+               return true;
+             }
+           } catch(e) {}
         }
+
+        // 2. Fallback: Login Local (se offline ou se for um dos 4 iniciais ainda não sincronizados)
+        const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === password);
+        if (localUser) {
+          set({ currentUser: localUser });
+          return true;
+        }
+
         return false;
       },
 
       updateRoomStatus: async (roomId, status) => {
         set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, status } : r) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('rooms').update({ status }).eq('id', roomId);
         }
       },
@@ -176,7 +194,7 @@ export const useStore = create<AppState>()(
           rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) 
         }));
 
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('tasks').insert({
             id: newTask.id, room_id: newTask.roomId, assigned_to: newTask.assignedTo, assigned_by_name: newTask.assignedByName,
             status: newTask.status, deadline: newTask.deadline, notes: newTask.notes, beds_to_make: newTask.bedsToMake,
@@ -188,7 +206,7 @@ export const useStore = create<AppState>()(
 
       updateTask: async (taskId, updates) => {
         set(state => ({ tasks: state.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('tasks').update({
             status: updates.status, checklist: updates.checklist, photos: updates.photos, 
             started_at: updates.startedAt, completed_at: updates.completedAt, duration_minutes: updates.durationMinutes
@@ -205,7 +223,7 @@ export const useStore = create<AppState>()(
           rooms: state.rooms.map(r => r.id === task.roomId ? { ...r, status: RoomStatus.DISPONIVEL } : r) 
         }));
 
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await Promise.all([
             supabase.from('tasks').update({ status: CleaningStatus.APROVADO }).eq('id', taskId),
             supabase.from('rooms').update({ status: RoomStatus.DISPONIVEL }).eq('id', task.roomId)
@@ -214,27 +232,15 @@ export const useStore = create<AppState>()(
         }
       },
 
-      logout: () => set({ currentUser: null, isDemoMode: false, tasks: [] }),
-      quickLogin: async (role) => { /* Mantido */ },
-      enterDemoMode: (role, specificUser) => { 
-        set({ 
-          currentUser: { 
-            fullName: 'Usuário Demo',
-            email: 'demo@hotel.com',
-            ...specificUser, 
-            role 
-          } as User, 
-          isDemoMode: true 
-        }); 
-      },
-      resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] }),
+      logout: () => set({ currentUser: null, tasks: [] }),
+      resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [], users: INITIAL_USERS }),
       syncICal: async (roomId) => { console.log("iCal:", roomId); },
       addLaundry: (item) => set((state) => ({ laundry: [...state.laundry, { ...item, id: `l-${Date.now()}`, lastUpdated: new Date().toISOString() }] })),
       moveLaundry: (itemId, stage) => set((state) => ({ laundry: state.laundry.map(l => l.id === itemId ? { ...l, stage, lastUpdated: new Date().toISOString() } : l) })),
       addUser: async (userData) => { 
         const id = `u-${Date.now()}`; 
         set(state => ({ users: [...state.users, { ...userData, id }] }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('users').insert({
             id, email: userData.email, full_name: userData.fullName, role: userData.role, password: userData.password
           });
@@ -242,7 +248,7 @@ export const useStore = create<AppState>()(
       },
       removeUser: async (id) => { 
         set(state => ({ users: state.users.filter(u => u.id !== id) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('users').delete().eq('id', id);
         }
       },
@@ -250,7 +256,7 @@ export const useStore = create<AppState>()(
         const id = `tr-${Date.now()}`;
         const date = new Date().toISOString();
         set(state => ({ transactions: [{ ...data, id, date }, ...state.transactions] }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('transactions').insert({
             id, date, type: data.type, category: data.category, amount: data.amount, description: data.description
           });
@@ -259,7 +265,7 @@ export const useStore = create<AppState>()(
       addInventory: async (item) => { 
         const id = `i-${Date.now()}`;
         set(state => ({ inventory: [...state.inventory, { ...item, id }] }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('inventory').insert({
             id, name: item.name, category: item.category, quantity: item.quantity, min_stock: item.minStock, price: item.price, unit_cost: item.unitCost
           });
@@ -267,7 +273,7 @@ export const useStore = create<AppState>()(
       },
       updateInventory: async (id, qty) => { 
         set(state => ({ inventory: state.inventory.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + qty) } : i) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           const item = get().inventory.find(i => i.id === id);
           if (item) await supabase.from('inventory').update({ quantity: item.quantity }).eq('id', id);
         }
@@ -277,14 +283,14 @@ export const useStore = create<AppState>()(
         const createdAt = new Date().toISOString();
         const authorName = get().currentUser?.fullName || 'Sistema';
         set(state => ({ announcements: [{ id, authorName, content, priority, createdAt }, ...state.announcements] }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('announcements').insert({ id, author_name: authorName, content, priority, created_at: createdAt });
         }
       },
       checkIn: async (data) => { 
         const id = `g-${Date.now()}`;
         set(state => ({ guests: [...state.guests, { ...data, id }], rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.OCUPADO } : r) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await Promise.all([
             supabase.from('guests').insert({ id, full_name: data.fullName, document: data.document, check_in: data.checkIn, check_out: data.checkOut, room_id: data.roomId, daily_rate: data.dailyRate, total_value: data.totalValue, payment_method: data.paymentMethod }),
             supabase.from('rooms').update({ status: RoomStatus.OCUPADO }).eq('id', data.roomId)
@@ -296,7 +302,7 @@ export const useStore = create<AppState>()(
         if (!g) return; 
         const checkedOutAt = new Date().toISOString();
         set(state => ({ guests: state.guests.map(x => x.id === id ? { ...x, checkedOutAt } : x), rooms: state.rooms.map(r => r.id === g.roomId ? { ...r, status: RoomStatus.SUJO } : r) })); 
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await Promise.all([
             supabase.from('guests').update({ checked_out_at: checkedOutAt }).eq('id', id),
             supabase.from('rooms').update({ status: RoomStatus.SUJO }).eq('id', g.roomId)
@@ -306,20 +312,20 @@ export const useStore = create<AppState>()(
       updateCurrentUser: async (upd) => { if (get().currentUser) set({ currentUser: { ...get().currentUser!, ...upd } }); },
       updateUserPassword: async (id, p) => { 
         set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); 
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('users').update({ password: p }).eq('id', id);
         }
       },
       generateAIBriefing: async () => { set({ managerBriefing: "Briefing gerado com sucesso." }); },
       updateRoomICal: async (roomId, url) => {
         set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, icalUrl: url } : r) }));
-        if (supabase && !get().isDemoMode) {
+        if (supabase) {
           await supabase.from('rooms').update({ ical_url: url }).eq('id', roomId);
         }
       }
     }),
     {
-      name: 'hospedapro-v300-master-fix',
+      name: 'hospedapro-v3-prod',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => { state?.checkConnection(); },
     }

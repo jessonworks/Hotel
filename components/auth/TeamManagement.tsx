@@ -52,11 +52,11 @@ const TeamManagement: React.FC = () => {
                         {user.avatarUrl ? (
                           <img src={user.avatarUrl} className="w-full h-full object-cover" />
                         ) : (
-                          user.fullName.charAt(0)
+                          user.fullName?.charAt(0) || '?'
                         )}
                       </div>
                       <div className="flex flex-col">
-                        <span className="font-bold text-slate-900 text-lg leading-tight">{user.fullName}</span>
+                        <span className="font-bold text-slate-900 text-lg leading-tight">{user.fullName || 'Sem Nome'}</span>
                         <span className="text-xs text-slate-400 font-medium">{user.email}</span>
                       </div>
                     </div>

@@ -162,7 +162,7 @@ const Header: React.FC = () => {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">{currentUser?.role}</p>
             </div>
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-full flex items-center justify-center font-black overflow-hidden border-2 border-white shadow-lg">
-              {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} className="w-full h-full object-cover" /> : currentUser?.fullName.charAt(0)}
+              {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} className="w-full h-full object-cover" /> : currentUser?.fullName?.charAt(0) || '?'}
             </div>
           </button>
         </div>
@@ -177,7 +177,7 @@ const Header: React.FC = () => {
               <div className="relative inline-block group mb-4">
                 <input type="file" ref={fileInputRef} onChange={handleAvatarChange} className="hidden" accept="image/*" />
                 <div onClick={() => fileInputRef.current?.click()} className="w-28 h-28 bg-blue-600 rounded-[2rem] flex items-center justify-center text-4xl font-black border-4 border-white shadow-2xl cursor-pointer overflow-hidden relative">
-                  {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} className="w-full h-full object-cover" /> : currentUser?.fullName.charAt(0)}
+                  {currentUser?.avatarUrl ? <img src={currentUser.avatarUrl} className="w-full h-full object-cover" /> : currentUser?.fullName?.charAt(0) || '?'}
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><Camera size={28} className="text-white" /></div>
                 </div>
               </div>

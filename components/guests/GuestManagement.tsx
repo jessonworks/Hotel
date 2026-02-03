@@ -114,10 +114,10 @@ const GuestManagement: React.FC = () => {
               <div className="p-6 space-y-4">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-gradient-to-br from-blue-500 to-indigo-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg">
-                    {guest.fullName.charAt(0)}
+                    {guest.fullName?.charAt(0) || '?'}
                   </div>
                   <div>
-                    <h3 className="font-black text-slate-900 leading-none">{guest.fullName}</h3>
+                    <h3 className="font-black text-slate-900 leading-none">{guest.fullName || 'Hóspede Sem Nome'}</h3>
                     <p className="text-[10px] font-black uppercase text-slate-400 mt-1">DOC: {guest.document}</p>
                   </div>
                 </div>

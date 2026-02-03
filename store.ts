@@ -218,7 +218,12 @@ export const useStore = create<AppState>()(
       quickLogin: async (role) => { /* Mantido */ },
       enterDemoMode: (role, specificUser) => { 
         set({ 
-          currentUser: { ...specificUser, role } as User, 
+          currentUser: { 
+            fullName: 'Usuário Demo',
+            email: 'demo@hotel.com',
+            ...specificUser, 
+            role 
+          } as User, 
           isDemoMode: true 
         }); 
       },

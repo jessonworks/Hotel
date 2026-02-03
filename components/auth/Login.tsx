@@ -31,7 +31,7 @@ const Login: React.FC = () => {
       if (!success) {
         if (!isSupabaseConnected) {
           const existingUser = users.find(u => u.email.toLowerCase() === email.toLowerCase());
-          enterDemoMode(getRoleFromEmail(email), existingUser || { email: email });
+          enterDemoMode(getRoleFromEmail(email), existingUser || { email: email, fullName: email.split('@')[0].toUpperCase() });
         } else {
           setError('E-mail ou senha incorretos.');
         }

@@ -19,13 +19,10 @@ const App: React.FC = () => {
   const { currentUser, checkConnection } = useStore();
 
   useEffect(() => {
-    // Heartbeat: Verifica a conexão a cada 60 segundos
     const interval = setInterval(() => {
       checkConnection();
     }, 60000);
-    
     checkConnection();
-    
     return () => clearInterval(interval);
   }, [checkConnection]);
 
@@ -33,34 +30,33 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  const isAdmin = currentUser.role === UserRole.ADMIN;
-  const isManager = currentUser.role === UserRole.MANAGER || isAdmin;
+  // Lógica de cargo normalizada com verificação de segurança (currentUser?.role || '')
+  const role = (currentUser?.role || '').toLowerCase();
+  const isAdmin = role === 'admin';
+  const isManager = role === 'manager' || role === 'gerente' || isAdmin;
 
   return (
     <HashRouter>
-      <div className="flex h-screen overflow-hidden">
+      <div className="flex flex-col md:flex-row min-h-screen w-full bg-gray-50 overflow-hidden">
+        {/* Menu Lateral / Mobile */}
         <Sidebar />
-        <div className="flex-1 flex flex-col min-w-0 overflow-hidden bg-gray-50">
+        
+        {/* Conteúdo Principal */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           <Header />
-          <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6">
+          <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6 custom-scrollbar">
             <Routes>
-              {/* Rota Principal */}
               <Route path="/" element={<Dashboard />} />
-              
-              {/* Rotas de Operação (Acesso Geral) */}
               <Route path="/cleaning" element={<CleaningTasks />} />
               <Route path="/laundry" element={<LaundryKanban />} />
-
-              {/* Rotas restritas para Gerência (Manager/Admin) */}
+              
+              {/* Rotas restritas */}
               <Route path="/rooms" element={isManager ? <RoomList /> : <Navigate to="/" />} />
               <Route path="/guests" element={isManager ? <GuestManagement /> : <Navigate to="/" />} />
               <Route path="/inventory" element={isManager ? <InventoryDashboard /> : <Navigate to="/" />} />
               <Route path="/team" element={isManager ? <TeamManagement /> : <Navigate to="/" />} />
-              
-              {/* Rota restrita exclusiva para Admin */}
               <Route path="/financial" element={isAdmin ? <FinancialDashboard /> : <Navigate to="/" />} />
 
-              {/* Fallback para rotas inexistentes */}
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

@@ -68,7 +68,12 @@ const generateInitialRooms = (): Room[] => {
     id: n, number: n, floor: parseInt(n[0]), type: RoomType.STANDARD, category: RoomCategory.GUEST_ROOM,
     status: RoomStatus.DISPONIVEL, maxGuests: 2, bedsCount: 2, hasMinibar: true, hasBalcony: n[0] !== '1'
   }));
-  const commonAreas = [{ id: 'area-cozinha', name: 'Cozinha' }, { id: 'area-recepcao', name: 'Recepção' }, { id: 'area-escadas', name: 'Escadas' }, { id: 'area-laje', name: 'Laje' }];
+  const commonAreas = [
+    { id: 'area-cozinha', name: 'Cozinha' },
+    { id: 'area-recepcao', name: 'Recepção' },
+    { id: 'area-escadas', name: 'Escadas' },
+    { id: 'area-laje', name: 'Laje' }
+  ];
   commonAreas.forEach(a => rooms.push({ id: a.id, number: a.name, floor: 0, type: RoomType.AREA, category: RoomCategory.COMMON_AREA, status: RoomStatus.DISPONIVEL, maxGuests: 0, bedsCount: 0, hasMinibar: false, hasBalcony: false }));
   return rooms;
 };
@@ -112,16 +117,21 @@ export const useStore = create<AppState>()(
             supabase.from('users').select('*')
           ]);
           
-          if (usersData?.length) set({ users: usersData.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password }))});
-          if (roomsData?.length) set({ rooms: roomsData.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony }))});
-          
+          if (usersData?.length) {
+            set({ users: usersData.map(u => ({ 
+              id: u.id, email: u.email, fullName: u.full_name, role: u.role, password: u.password 
+            }))});
+          }
+
+          if (roomsData?.length) {
+            set({ rooms: roomsData.map(r => ({ 
+              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, beds_count: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony 
+            }))});
+          }
+
           if (tasksData) {
             set({ tasks: tasksData.map(t => ({ 
-              id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, 
-              status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, 
-              durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes, 
-              fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, 
-              checklist: t.checklist || {}, photos: t.photos || [] 
+              id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes, fatorMamaeVerified: t.fator_mamae_verified, bedsToMake: t.beds_to_make, checklist: t.checklist || {}, photos: t.photos || [] 
             }))});
           }
         } catch (e) { console.error("Sync Error:", e); }
@@ -147,7 +157,6 @@ export const useStore = create<AppState>()(
       },
 
       createTask: async (data) => {
-        // Bloqueio de duplicidade
         const existing = get().tasks.find(t => t.roomId === data.roomId && t.status !== CleaningStatus.APROVADO);
         if (existing) return;
 
@@ -207,7 +216,13 @@ export const useStore = create<AppState>()(
 
       logout: () => set({ currentUser: null, isDemoMode: false, tasks: [] }),
       quickLogin: async (role) => { /* Mantido */ },
-      enterDemoMode: (role, specificUser) => { set({ currentUser: specificUser as User, isDemoMode: true }); },
+      enterDemoMode: (role, specificUser) => { 
+        // Correção crítica: Garante que o role seja injetado no objeto do usuário para evitar erro de .toLowerCase() em undefined
+        set({ 
+          currentUser: { ...specificUser, role } as User, 
+          isDemoMode: true 
+        }); 
+      },
       resetData: () => set({ rooms: generateInitialRooms(), tasks: [], laundry: [], guests: [], inventory: [], transactions: [] }),
       syncICal: async (roomId) => { console.log("iCal:", roomId); },
       addLaundry: (item) => set((state) => ({ laundry: [...state.laundry, { ...item, id: `l-${Date.now()}`, lastUpdated: new Date().toISOString() }] })),
@@ -225,7 +240,7 @@ export const useStore = create<AppState>()(
       generateAIBriefing: async () => { set({ managerBriefing: "OK" }); }
     }),
     {
-      name: 'hospedapro-v130-stable-final',
+      name: 'hospedapro-v300-master-fix',
       storage: createJSONStorage(() => localStorage),
       onRehydrateStorage: () => (state) => { state?.checkConnection(); },
     }

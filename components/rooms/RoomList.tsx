@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../../store';
 import { RoomStatus, UserRole, RoomCategory, CleaningStatus } from '../../types';
-import { Coffee, Wind, X, Bed, RefreshCw, Link as LinkIcon, Calendar, Clock, ClipboardList, AlertTriangle, Settings2, CheckCircle2, ShieldCheck, Filter } from 'lucide-react';
+import { Coffee, Wind, X, Bed, RefreshCw, Link as LinkIcon, Calendar, Clock, ClipboardList, AlertTriangle, Settings2, CheckCircle2, ShieldCheck, Filter, MessageSquareText } from 'lucide-react';
 
 const RoomList: React.FC = () => {
   const { rooms, tasks, updateRoomStatus, updateRoomICal, createTask, users, syncICal, currentUser } = useStore();
@@ -68,7 +68,6 @@ const RoomList: React.FC = () => {
         )}
       </div>
 
-      {/* BARRA DE FILTROS RESTAURADA */}
       <div className="flex flex-wrap items-center gap-3 bg-white p-4 rounded-[1.5rem] border border-slate-200 shadow-sm">
         <div className="flex items-center gap-2 px-3 border-r border-slate-100 pr-5">
           <Filter size={16} className="text-slate-400" />
@@ -158,7 +157,7 @@ const RoomList: React.FC = () => {
 
       {assigningRoomId && (
         <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in zoom-in-95">
-          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 overflow-y-auto max-h-[90vh]">
              <div className="flex justify-between items-center mb-8">
                 <h3 className="text-2xl font-black text-slate-900">Designar Faxina</h3>
                 <button onClick={() => setAssigningRoomId(null)} className="text-slate-400 p-2 bg-slate-50 rounded-full"><X /></button>
@@ -175,7 +174,16 @@ const RoomList: React.FC = () => {
                    <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Prazo Máximo</label>
                    <input type="time" value={assignmentData.deadline} onChange={e => setAssignmentData({...assignmentData, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold" />
                 </div>
-                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest disabled:opacity-50">Confirmar Envio</button>
+                <div className="space-y-1">
+                   <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Notas / Instruções Específicas</label>
+                   <textarea 
+                     placeholder="Ex: Trocar cortinas, verificar lâmpada do banheiro..."
+                     value={assignmentData.notes} 
+                     onChange={e => setAssignmentData({...assignmentData, notes: e.target.value})}
+                     className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold min-h-[100px] resize-none focus:ring-2 focus:ring-blue-500 transition-all"
+                   />
+                </div>
+                <button disabled={!assignmentData.staffId || !assignmentData.deadline} onClick={handleAssignTask} className="w-full py-5 bg-blue-600 text-white font-black rounded-3xl shadow-xl uppercase tracking-widest disabled:opacity-50 active:scale-95 transition-all">Confirmar Envio</button>
              </div>
           </div>
         </div>

@@ -217,7 +217,6 @@ export const useStore = create<AppState>()(
       logout: () => set({ currentUser: null, isDemoMode: false, tasks: [] }),
       quickLogin: async (role) => { /* Mantido */ },
       enterDemoMode: (role, specificUser) => { 
-        // Correção crítica: Garante que o role seja injetado no objeto do usuário para evitar erro de .toLowerCase() em undefined
         set({ 
           currentUser: { ...specificUser, role } as User, 
           isDemoMode: true 
@@ -227,17 +226,92 @@ export const useStore = create<AppState>()(
       syncICal: async (roomId) => { console.log("iCal:", roomId); },
       addLaundry: (item) => set((state) => ({ laundry: [...state.laundry, { ...item, id: `l-${Date.now()}`, lastUpdated: new Date().toISOString() }] })),
       moveLaundry: (itemId, stage) => set((state) => ({ laundry: state.laundry.map(l => l.id === itemId ? { ...l, stage, lastUpdated: new Date().toISOString() } : l) })),
-      addUser: async (userData) => { const id = `u-${Date.now()}`; set(state => ({ users: [...state.users, { ...userData, id }] })); },
-      removeUser: async (id) => { set(state => ({ users: state.users.filter(u => u.id !== id) })); },
-      addTransaction: async (data) => { set(state => ({ transactions: [{ ...data, id: `tr-${Date.now()}`, date: new Date().toISOString() }, ...state.transactions] })); },
-      addInventory: async (item) => { set(state => ({ inventory: [...state.inventory, { ...item, id: `i-${Date.now()}` }] })); },
-      updateInventory: async (id, qty) => { set(state => ({ inventory: state.inventory.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + qty) } : i) })); },
-      addAnnouncement: async (content, priority) => { set(state => ({ announcements: [{ id: `a-${Date.now()}`, authorName: get().currentUser?.fullName || 'Sistema', content, priority, createdAt: new Date().toISOString() }, ...state.announcements] })); },
-      checkIn: async (data) => { set(state => ({ guests: [...state.guests, { ...data, id: `g-${Date.now()}` }], rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.OCUPADO } : r) })); },
-      checkOut: async (id) => { const g = get().guests.find(g => g.id === id); if (!g) return; set(state => ({ guests: state.guests.map(x => x.id === id ? { ...x, checkedOutAt: new Date().toISOString() } : x), rooms: state.rooms.map(r => r.id === g.roomId ? { ...r, status: RoomStatus.SUJO } : r) })); },
+      addUser: async (userData) => { 
+        const id = `u-${Date.now()}`; 
+        set(state => ({ users: [...state.users, { ...userData, id }] }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('users').insert({
+            id, email: userData.email, full_name: userData.fullName, role: userData.role, password: userData.password
+          });
+        }
+      },
+      removeUser: async (id) => { 
+        set(state => ({ users: state.users.filter(u => u.id !== id) }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('users').delete().eq('id', id);
+        }
+      },
+      addTransaction: async (data) => { 
+        const id = `tr-${Date.now()}`;
+        const date = new Date().toISOString();
+        set(state => ({ transactions: [{ ...data, id, date }, ...state.transactions] }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('transactions').insert({
+            id, date, type: data.type, category: data.category, amount: data.amount, description: data.description
+          });
+        }
+      },
+      addInventory: async (item) => { 
+        const id = `i-${Date.now()}`;
+        set(state => ({ inventory: [...state.inventory, { ...item, id }] }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('inventory').insert({
+            id, name: item.name, category: item.category, quantity: item.quantity, min_stock: item.minStock, price: item.price, unit_cost: item.unitCost
+          });
+        }
+      },
+      updateInventory: async (id, qty) => { 
+        set(state => ({ inventory: state.inventory.map(i => i.id === id ? { ...i, quantity: Math.max(0, i.quantity + qty) } : i) }));
+        if (supabase && !get().isDemoMode) {
+          const item = get().inventory.find(i => i.id === id);
+          if (item) await supabase.from('inventory').update({ quantity: item.quantity }).eq('id', id);
+        }
+      },
+      addAnnouncement: async (content, priority) => { 
+        const id = `a-${Date.now()}`;
+        const createdAt = new Date().toISOString();
+        const authorName = get().currentUser?.fullName || 'Sistema';
+        set(state => ({ announcements: [{ id, authorName, content, priority, createdAt }, ...state.announcements] }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('announcements').insert({ id, author_name: authorName, content, priority, created_at: createdAt });
+        }
+      },
+      checkIn: async (data) => { 
+        const id = `g-${Date.now()}`;
+        set(state => ({ guests: [...state.guests, { ...data, id }], rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.OCUPADO } : r) }));
+        if (supabase && !get().isDemoMode) {
+          await Promise.all([
+            supabase.from('guests').insert({ id, full_name: data.fullName, document: data.document, check_in: data.checkIn, check_out: data.checkOut, room_id: data.roomId, daily_rate: data.dailyRate, total_value: data.totalValue, payment_method: data.paymentMethod }),
+            supabase.from('rooms').update({ status: RoomStatus.OCUPADO }).eq('id', data.roomId)
+          ]);
+        }
+      },
+      checkOut: async (id) => { 
+        const g = get().guests.find(g => g.id === id); 
+        if (!g) return; 
+        const checkedOutAt = new Date().toISOString();
+        set(state => ({ guests: state.guests.map(x => x.id === id ? { ...x, checkedOutAt } : x), rooms: state.rooms.map(r => r.id === g.roomId ? { ...r, status: RoomStatus.SUJO } : r) })); 
+        if (supabase && !get().isDemoMode) {
+          await Promise.all([
+            supabase.from('guests').update({ checked_out_at: checkedOutAt }).eq('id', id),
+            supabase.from('rooms').update({ status: RoomStatus.SUJO }).eq('id', g.roomId)
+          ]);
+        }
+      },
       updateCurrentUser: async (upd) => { if (get().currentUser) set({ currentUser: { ...get().currentUser!, ...upd } }); },
-      updateUserPassword: async (id, p) => { set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); },
-      generateAIBriefing: async () => { set({ managerBriefing: "OK" }); }
+      updateUserPassword: async (id, p) => { 
+        set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); 
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('users').update({ password: p }).eq('id', id);
+        }
+      },
+      generateAIBriefing: async () => { set({ managerBriefing: "Briefing gerado com sucesso." }); },
+      updateRoomICal: async (roomId, url) => {
+        set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, icalUrl: url } : r) }));
+        if (supabase && !get().isDemoMode) {
+          await supabase.from('rooms').update({ ical_url: url }).eq('id', roomId);
+        }
+      }
     }),
     {
       name: 'hospedapro-v300-master-fix',

@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
-  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon, LayoutDashboard, History
+  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon, LayoutDashboard, History, MessageSquareText
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
@@ -16,13 +16,11 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
-  // STAFF (Rose/Karine): Recebe apenas o que foi designado ao seu ID
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // GERENTE: Monitora aprovações e o campo
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
   const teamActivity = tasks.filter(t => 
     t.assignedTo !== currentUser?.id && 
@@ -103,8 +101,6 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-12">
-          
-          {/* PAINEL DO GERENTE (AUDITORIA) */}
           {isAdminOrManager && (
             <>
               {pendingAudits.length > 0 && (
@@ -134,13 +130,6 @@ const CleaningTasks: React.FC = () => {
                             >
                               <CheckCircle2 size={24} /> APROVAR E LIBERAR
                             </button>
-                          </div>
-                          <div className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-3">
-                            {task.photos?.filter(p => p.category === 'MAMAE').map((p, i) => (
-                              <div key={i} className="group relative overflow-hidden rounded-2xl border-2 border-slate-100 shadow-sm">
-                                <img src={p.url} className="w-full h-32 object-cover transition-transform group-hover:scale-110" alt="Audit" />
-                              </div>
-                            ))}
                           </div>
                         </div>
                       );
@@ -182,7 +171,6 @@ const CleaningTasks: React.FC = () => {
             </>
           )}
 
-          {/* PAINEL DO STAFF (ROSE / KARINE) */}
           {!isAdminOrManager && (
             <section className="space-y-8">
               <header className="flex items-center gap-5 px-2">
@@ -219,6 +207,12 @@ const CleaningTasks: React.FC = () => {
                             <div className="flex items-center gap-3 text-rose-500 font-black text-sm uppercase tracking-[0.3em]">
                                <Clock size={24} /> PRAZO: {task.deadline || 'URGENTE'}
                             </div>
+                            {task.notes && (
+                              <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex items-start gap-3 mt-4">
+                                <MessageSquareText size={20} className="text-amber-600 shrink-0" />
+                                <p className="text-sm font-bold text-amber-900 leading-tight">Nota: {task.notes}</p>
+                              </div>
+                            )}
                           </div>
                         </div>
                         <button 
@@ -236,7 +230,6 @@ const CleaningTasks: React.FC = () => {
           )}
         </div>
       ) : (
-        /* TELA DE EXECUÇÃO ATIVA (STAFF) */
         <div className="bg-white rounded-[4rem] shadow-2xl overflow-hidden border border-slate-100 animate-in slide-in-from-bottom-10 h-full max-h-[98vh] flex flex-col">
           <div className="bg-[#0F172A] p-10 text-white shrink-0">
             <div className="flex justify-between items-center mb-6">
@@ -250,6 +243,12 @@ const CleaningTasks: React.FC = () => {
                 <X size={56} />
               </button>
             </div>
+            {activeTask.notes && (
+               <div className="p-6 bg-white/5 border border-white/10 rounded-[2rem] flex items-start gap-4">
+                  <MessageSquareText size={32} className="text-blue-400 shrink-0" />
+                  <p className="text-xl font-bold text-white leading-tight">Instrução: {activeTask.notes}</p>
+               </div>
+            )}
           </div>
 
           <div className="flex-1 overflow-y-auto p-10 sm:p-14 space-y-20 pb-60 custom-scrollbar">

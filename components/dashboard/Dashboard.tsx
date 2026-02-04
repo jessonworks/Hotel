@@ -11,15 +11,14 @@ import {
   Brush,
   Wind,
   CheckCircle2,
-  Calendar,
-  History
+  History,
+  Award
 } from 'lucide-react';
 import { 
   BarChart, 
   Bar, 
   XAxis, 
   YAxis, 
-  CartesianGrid, 
   Tooltip, 
   ResponsiveContainer
 } from 'recharts';
@@ -31,7 +30,7 @@ const Dashboard: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
 
-  // Métricas do Staff
+  // Métricas do Staff Otimizadas
   const today = new Date().toISOString().split('T')[0];
   const cleanedToday = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
@@ -39,16 +38,12 @@ const Dashboard: React.FC = () => {
     (t.completedAt?.startsWith(today))
   );
 
-  const totalRooms = rooms.length;
-  const readyRooms = rooms.filter(r => r.status === RoomStatus.DISPONIVEL).length;
+  const pendingTasksCount = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.PENDENTE).length;
+  const inProgressTasks = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.EM_PROGRESSO).length;
   
   const totalIncome = transactions.filter(t => t.type === 'INCOME').reduce((acc, t) => acc + t.amount, 0);
   const totalExpense = transactions.filter(t => t.type === 'EXPENSE').reduce((acc, t) => acc + t.amount, 0);
   const realProfit = totalIncome - totalExpense;
-
-  const pendingTasksCount = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.PENDENTE).length;
-  const inProgressTasks = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.EM_PROGRESSO).length;
-  const cleanLaundryCount = laundry.filter(l => l.stage === LaundryStage.GUARDADO).reduce((acc, l) => acc + l.quantity, 0);
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO).length;
 
   const stats = isAdminOrManager ? [
@@ -57,10 +52,10 @@ const Dashboard: React.FC = () => {
     { label: 'Lucro', value: `R$ ${realProfit >= 1000 ? (realProfit/1000).toFixed(1) + 'k' : realProfit.toFixed(0)}`, icon: <TrendingUp size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
     { label: 'Avisos', value: announcements.length, icon: <AlertCircle size={20}/>, color: 'bg-rose-600', shadow: 'shadow-rose-500/20' },
   ] : [
-    { label: 'Limpas Hoje', value: cleanedToday.length, icon: <CheckCircle2 size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
+    { label: 'Limpas Hoje', value: cleanedToday.length, icon: <Award size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
     { label: 'A Fazer', value: pendingTasksCount, icon: <Brush size={20}/>, color: 'bg-rose-600', shadow: 'shadow-rose-500/20' },
-    { label: 'Executando', value: inProgressTasks, icon: <Clock size={20}/>, color: 'bg-blue-600', shadow: 'shadow-blue-500/20' },
-    { label: 'Mural', value: announcements.length, icon: <MessageSquare size={20}/>, color: 'bg-slate-800', shadow: 'shadow-slate-500/20' },
+    { label: 'Em Curso', value: inProgressTasks, icon: <Clock size={20}/>, color: 'bg-blue-600', shadow: 'shadow-blue-500/20' },
+    { label: 'Enxoval Ok', value: laundry.filter(l => l.stage === LaundryStage.GUARDADO).reduce((acc, l) => acc + l.quantity, 0), icon: <Wind size={20}/>, color: 'bg-blue-900', shadow: 'shadow-blue-500/20' },
   ];
 
   const handleSendAnnouncement = () => {
@@ -73,9 +68,9 @@ const Dashboard: React.FC = () => {
     <div className="space-y-6 animate-in fade-in duration-700 pb-20 md:pb-12 px-1">
       <header className="px-2">
         <h1 className="text-3xl font-black text-slate-900 tracking-tight leading-none">
-          {isAdminOrManager ? 'Gestão' : 'Meu Plantão'}
+          {isAdminOrManager ? 'Gestão Lapa' : 'Meu Painel'}
         </h1>
-        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">Unidade Lapa • Real-Time</p>
+        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mt-1">HospedaPro • Versão Operacional</p>
       </header>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
@@ -94,22 +89,27 @@ const Dashboard: React.FC = () => {
 
       {!isAdminOrManager && (
         <section className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-           <h3 className="font-black text-sm text-slate-900 flex items-center gap-2 mb-4 px-1">
-             <History size={18} className="text-blue-600" /> Meu Histórico de Hoje
-           </h3>
-           <div className="space-y-2">
+           <div className="flex items-center justify-between mb-4 px-1">
+              <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
+                <History size={18} className="text-blue-600" /> Histórico de Hoje
+              </h3>
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('pt-BR')}</span>
+           </div>
+           <div className="space-y-3">
               {cleanedToday.length > 0 ? cleanedToday.map(task => {
                 const room = rooms.find(r => r.id === task.roomId);
+                const isApproved = task.status === CleaningStatus.APROVADO;
                 return (
                   <div key={task.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center font-black text-blue-600 border border-slate-200">
+                      <div className={`w-10 h-10 ${isApproved ? 'bg-emerald-600 text-white' : 'bg-white text-blue-600'} rounded-xl flex items-center justify-center font-black border border-slate-200 shadow-sm`}>
                         {room?.number}
                       </div>
                       <div>
-                        <p className="text-xs font-black text-slate-800">Limpeza Concluída</p>
-                        <p className="text-[8px] font-black uppercase text-slate-400">
-                          {task.status === CleaningStatus.APROVADO ? '✅ Aprovado pelo Gerente' : '⏳ Aguardando Auditoria'}
+                        <p className="text-xs font-black text-slate-800">Unidade Concluída</p>
+                        <p className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${isApproved ? 'text-emerald-600' : 'text-amber-500'}`}>
+                          {isApproved ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                          {isApproved ? 'Aprovado pelo Gerente' : 'Aguardando Auditoria'}
                         </p>
                       </div>
                     </div>
@@ -120,8 +120,9 @@ const Dashboard: React.FC = () => {
                   </div>
                 );
               }) : (
-                <div className="text-center py-8 text-slate-300">
-                  <p className="text-xs font-black uppercase tracking-widest">Nenhuma limpeza registrada hoje.</p>
+                <div className="text-center py-10 bg-slate-50/50 rounded-[1.5rem] border border-dashed border-slate-200">
+                  <Brush size={32} className="text-slate-200 mx-auto mb-2" />
+                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Nenhuma limpeza enviada ainda hoje.</p>
                 </div>
               )}
            </div>
@@ -132,7 +133,7 @@ const Dashboard: React.FC = () => {
         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
           <div className="flex items-center justify-between mb-6 px-1">
             <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-              <TrendingUp size={18} className="text-blue-600" /> Histórico Operacional
+              <TrendingUp size={18} className="text-blue-600" /> Fluxo Semanal
             </h3>
           </div>
           <div className="h-48 md:h-64">
@@ -143,7 +144,7 @@ const Dashboard: React.FC = () => {
               ]}>
                 <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#94a3b8', fontSize: 10, fontWeight: 700}} />
                 <YAxis hide />
-                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
+                <Tooltip cursor={{fill: '#f8fafc'}} contentStyle={{borderRadius: '16px', border: 'none', shadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'}} />
                 <Bar dataKey="v" fill="#2563eb" radius={[6, 6, 0, 0]} barSize={24} />
               </BarChart>
             </ResponsiveContainer>
@@ -154,7 +155,7 @@ const Dashboard: React.FC = () => {
       <div className="bg-slate-900 p-6 rounded-[2rem] shadow-xl border border-slate-800 flex flex-col min-h-[400px]">
         <div className="flex items-center gap-3 mb-6">
           <MessageSquare className="text-blue-500" size={20} />
-          <h3 className="font-black text-lg text-white">Mural</h3>
+          <h3 className="font-black text-lg text-white">Mural de Avisos</h3>
         </div>
         <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1 custom-scrollbar">
           {announcements.map(msg => (
@@ -170,10 +171,10 @@ const Dashboard: React.FC = () => {
         <div className="relative">
           <textarea 
             value={newMsg} onChange={e => setNewMsg(e.target.value)}
-            placeholder="Comunicado..."
+            placeholder="Escreva algo importante para a equipe..."
             className="w-full p-4 pr-12 bg-slate-800 border-slate-700 text-white placeholder-slate-500 rounded-2xl text-xs font-bold focus:ring-1 focus:ring-blue-500 resize-none h-20"
           />
-          <button onClick={handleSendAnnouncement} className="absolute right-3 bottom-3 p-3 bg-blue-600 text-white rounded-xl shadow-lg active:scale-90">
+          <button onClick={handleSendAnnouncement} className="absolute right-3 bottom-3 p-3 bg-blue-600 text-white rounded-xl shadow-lg active:scale-90 transition-all">
             <Send size={16} />
           </button>
         </div>

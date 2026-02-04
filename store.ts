@@ -89,7 +89,6 @@ export const useStore = create<AppState>()(
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
-            // Alterado: Agora buscamos todas as tarefas recentes, inclusive as aprovadas para histórico
             supabase.from('tasks').select('*').order('completed_at', { ascending: false }).limit(100),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
@@ -119,7 +118,7 @@ export const useStore = create<AppState>()(
 
           if (tRes.data) {
             set({ tasks: tRes.data.map(t => ({
-              id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name,
+              id: t.id, roomId: t.room_id, assigned_to: t.assigned_to, assignedByName: t.assigned_by_name,
               status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at,
               durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes,
               checklist: t.checklist || {}, photos: t.photos || [], fatorMamaeVerified: !!t.fator_mamae_verified,
@@ -138,7 +137,7 @@ export const useStore = create<AppState>()(
             set({ guests: gRes.data.map(g => ({
               id: g.id, fullName: g.full_name, document: g.document, checkIn: g.check_in,
               checkOut: g.check_out, roomId: g.room_id, dailyRate: g.daily_rate,
-              totalValue: g.total_value, payment_method: g.payment_method as PaymentMethod
+              totalValue: g.total_value, paymentMethod: g.payment_method as PaymentMethod
             })) });
           }
 
@@ -212,17 +211,35 @@ export const useStore = create<AppState>()(
       },
 
       updateTask: async (taskId, updates) => {
+        // ATUALIZAÇÃO OTIMISTA: Atualiza o estado local imediatamente para eliminar o lag
+        const currentTasks = get().tasks;
+        const taskIndex = currentTasks.findIndex(t => t.id === taskId);
+        
+        if (taskIndex !== -1) {
+          const updatedTasks = [...currentTasks];
+          updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], ...updates };
+          set({ tasks: updatedTasks });
+        }
+
         if (!supabase) return;
-        await supabase.from('tasks').update({
-          status: updates.status, 
-          checklist: updates.checklist, 
-          photos: updates.photos,
-          started_at: updates.startedAt, 
-          completed_at: updates.completedAt,
-          duration_minutes: updates.durationMinutes, 
-          fator_mamae_verified: updates.fator_mamae_verified
-        }).eq('id', taskId);
-        await get().syncData();
+        
+        // Formata os campos para o padrão do banco (snake_case)
+        const dbUpdates: any = {};
+        if (updates.status !== undefined) dbUpdates.status = updates.status;
+        if (updates.checklist !== undefined) dbUpdates.checklist = updates.checklist;
+        if (updates.photos !== undefined) dbUpdates.photos = updates.photos;
+        if (updates.startedAt !== undefined) dbUpdates.started_at = updates.startedAt;
+        if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt;
+        if (updates.durationMinutes !== undefined) dbUpdates.duration_minutes = updates.durationMinutes;
+        if (updates.fatorMamaeVerified !== undefined) dbUpdates.fator_mamae_verified = updates.fatorMamaeVerified;
+
+        const { error } = await supabase.from('tasks').update(dbUpdates).eq('id', taskId);
+        
+        // Se houver erro no banco, reverte ou sincroniza para garantir integridade
+        if (error) {
+           console.error("Erro ao atualizar tarefa no banco:", error);
+           await get().syncData(); 
+        }
       },
 
       approveTask: async (taskId) => {
@@ -266,7 +283,7 @@ export const useStore = create<AppState>()(
         await supabase.from('guests').insert({
           id, full_name: data.fullName, document: data.document, check_in: data.check_in,
           check_out: data.check_out, room_id: data.roomId, daily_rate: data.daily_rate,
-          total_value: data.total_value, payment_method: data.payment_method
+          total_value: data.total_value, payment_method: data.paymentMethod
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
         await get().syncData();

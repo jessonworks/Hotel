@@ -16,16 +16,16 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
-  // MINHAS TAREFAS (Exclusivo para o Staff logado)
+  // MINHAS TAREFAS: Apenas as designadas para o ID do usuário logado
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // APROVAÇÕES PENDENTES (Apenas Auditorias Reais para Admin/Manager)
+  // APROVAÇÕES: Tarefas enviadas pelo staff aguardando gerente
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
 
-  // EQUIPE EM ATIVIDADE (Apenas STAFFs que estão trabalhando agora)
+  // EQUIPE EM ATIVIDADE: Apenas usuários com role STAFF que estão com tarefas ativas
   const teamActivity = tasks.filter(t => {
     const assignedUser = users.find(u => u.id === t.assignedTo);
     return assignedUser?.role === UserRole.STAFF && 
@@ -53,7 +53,6 @@ const CleaningTasks: React.FC = () => {
   };
 
   const handleStartPhoto = (taskId: string) => {
-    if (isAdminOrManager) return;
     setCapturingFor({ id: 'start_audit', category: 'START' });
     setActiveTaskId(taskId);
     fileInputRef.current?.click();

@@ -27,35 +27,36 @@ interface AppState {
   announcements: Announcement[];
   transactions: Transaction[];
   isSupabaseConnected: boolean;
+  connectionError: string | null;
   
   login: (email: string, password?: string) => Promise<boolean>;
   logout: () => void;
   syncData: () => Promise<void>;
+  subscribeToChanges: () => () => void;
   checkConnection: () => Promise<void>;
   
-  // Ações de Negócio
+  updateCurrentUser: (updates: Partial<User>) => void;
+  updateUserPassword: (userId: string, newPass: string) => Promise<void>;
+  
   createTask: (data: Partial<CleaningTask>) => Promise<void>;
   updateTask: (taskId: string, updates: Partial<CleaningTask>) => Promise<void>;
   approveTask: (taskId: string) => Promise<void>;
   updateRoomStatus: (roomId: string, status: RoomStatus) => Promise<void>;
+  updateRoomICal: (roomId: string, icalUrl: string) => Promise<void>;
+  syncICal: (roomId: string) => Promise<void>;
   
-  // Lavanderia (PERSISTENTE)
   addLaundry: (item: Omit<LaundryItem, 'id' | 'lastUpdated'>) => Promise<void>;
   moveLaundry: (itemId: string, stage: LaundryStage) => Promise<void>;
   
-  // Estoque
   addInventory: (item: Omit<InventoryItem, 'id'>) => Promise<void>;
   updateInventory: (id: string, qty: number) => Promise<void>;
   
-  // Hóspedes
   checkIn: (guest: Omit<Guest, 'id'>) => Promise<void>;
   checkOut: (guestId: string) => Promise<void>;
   
-  // Financeiro e Mural
   addAnnouncement: (content: string, priority: 'low' | 'normal' | 'high') => Promise<void>;
   addTransaction: (data: Omit<Transaction, 'id' | 'date'>) => Promise<void>;
   
-  // Gestão de Time
   addUser: (user: Omit<User, 'id'>) => Promise<void>;
   removeUser: (id: string) => Promise<void>;
 }
@@ -73,14 +74,29 @@ export const useStore = create<AppState>()(
       announcements: [],
       transactions: [],
       isSupabaseConnected: false,
+      connectionError: null,
 
       checkConnection: async () => {
         if (!supabase) return;
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
-          set({ isSupabaseConnected: !error });
-          if (!error && get().currentUser) await get().syncData();
-        } catch { set({ isSupabaseConnected: false }); }
+          set({ isSupabaseConnected: !error, connectionError: error?.message || null });
+        } catch (e: any) { set({ isSupabaseConnected: false, connectionError: e.message }); }
+      },
+
+      subscribeToChanges: () => {
+        if (!supabase) return () => {};
+        
+        const channel = supabase
+          .channel('db-changes')
+          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+            get().syncData();
+          })
+          .subscribe();
+
+        return () => {
+          supabase.removeChannel(channel);
+        };
       },
 
       syncData: async () => {
@@ -89,8 +105,6 @@ export const useStore = create<AppState>()(
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
-            // CORREÇÃO CRÍTICA: Ordenar por 'id' descendente para que as tarefas novas (IDs maiores) 
-            // apareçam primeiro. O uso de 'completed_at' ocultava tarefas novas pois nulas ficavam no fim da lista.
             supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
@@ -99,62 +113,48 @@ export const useStore = create<AppState>()(
             supabase.from('laundry').select('*').order('last_updated', { ascending: false })
           ]);
 
-          if (uRes.data) {
-            set({ users: uRes.data.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: u.role as UserRole, password: u.password })) });
-          }
-
-          if (rRes.data) {
-            set({ rooms: rRes.data.map(r => ({
+          if (uRes.data) set({ users: uRes.data.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: u.role as UserRole, password: u.password })) });
+          
+          if (rRes.data) set({ rooms: rRes.data.map(r => ({
               id: r.id, number: r.number, floor: r.floor, status: r.status as RoomStatus,
               category: r.category as RoomCategory, type: (r.type || 'standard') as RoomType,
-              maxGuests: r.max_guests || 2, bedsCount: r.beds_count || 1, hasMinibar: !!r.has_minibar, hasBalcony: !!r.has_balcony
-            })) });
-          }
+              maxGuests: r.max_guests || 2, bedsCount: r.beds_count || 1, hasMinibar: !!r.has_minibar, 
+              hasBalcony: !!r.has_balcony, icalUrl: r.ical_url
+          })) });
 
-          if (lRes.data) {
-            set({ laundry: lRes.data.map(l => ({
+          if (lRes.data) set({ laundry: lRes.data.map(l => ({
               id: l.id, type: l.type, quantity: l.quantity, stage: l.stage as LaundryStage,
               roomOrigin: l.room_origin, lastUpdated: l.last_updated
-            })) });
-          }
+          })) });
 
-          if (tRes.data) {
-            set({ tasks: tRes.data.map(t => ({
+          if (tRes.data) set({ tasks: tRes.data.map(t => ({
               id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name,
               status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at,
               durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes,
               checklist: t.checklist || {}, photos: t.photos || [], fatorMamaeVerified: !!t.fator_mamae_verified,
               bedsToMake: t.beds_to_make || 0
-            })) });
-          }
+          })) });
 
-          if (iRes.data) {
-            set({ inventory: iRes.data.map(i => ({
+          if (iRes.data) set({ inventory: iRes.data.map(i => ({
               id: i.id, name: i.name, category: i.category, quantity: i.quantity,
               minStock: i.min_stock, price: i.price, unitCost: i.unit_cost
-            })) });
-          }
+          })) });
 
-          if (gRes.data) {
-            set({ guests: gRes.data.map(g => ({
-              id: g.id, fullName: g.full_name, document: g.document, checkIn: g.check_in,
-              checkOut: g.check_out, roomId: g.room_id, dailyRate: g.daily_rate,
-              totalValue: g.total_value, paymentMethod: g.payment_method as PaymentMethod
-            })) });
-          }
+          if (gRes.data) set({ guests: gRes.data.map(g => ({
+              id: g.id, fullName: g.full_name, document: g.document, check_in: g.check_in,
+              check_out: g.check_out, room_id: g.room_id, daily_rate: g.daily_rate,
+              total_value: g.total_value, payment_method: g.payment_method as PaymentMethod
+          })) });
 
-          if (aRes.data) {
-            set({ announcements: aRes.data.map(a => ({
-              id: a.id, authorName: a.author_name, content: a.content, priority: a.priority as any, createdAt: a.created_at
-            })) });
-          }
+          if (aRes.data) set({ announcements: aRes.data.map(a => ({
+              id: a.id, author_name: a.author_name, content: a.content, priority: a.priority as any, created_at: a.created_at
+          })) });
 
-          if (trRes.data) {
-            set({ transactions: trRes.data.map(tr => ({
+          if (trRes.data) set({ transactions: trRes.data.map(tr => ({
               id: tr.id, date: tr.date, type: tr.type as any, category: tr.category as any,
               amount: tr.amount, description: tr.description
-            })) });
-          }
+          })) });
+
         } catch (e) { console.error("Sync Error:", e); }
       },
 
@@ -176,51 +176,28 @@ export const useStore = create<AppState>()(
         return false;
       },
 
-      addLaundry: async (item) => {
-        if (!supabase) return;
-        const id = `l-${Date.now()}`;
-        const lastUpdated = new Date().toISOString();
-        const { error } = await supabase.from('laundry').insert({
-          id, type: item.type, quantity: item.quantity, stage: item.stage,
-          room_origin: item.roomOrigin, last_updated: lastUpdated
-        });
-        if (!error) await get().syncData();
+      // Added missing method for updating profile
+      updateCurrentUser: (updates) => {
+        const current = get().currentUser;
+        if (current) {
+          set({ currentUser: { ...current, ...updates } });
+        }
       },
 
-      moveLaundry: async (itemId, stage) => {
+      // Added missing method for password change
+      updateUserPassword: async (userId, newPass) => {
         if (!supabase) return;
-        const { error } = await supabase.from('laundry').update({ 
-          stage, 
-          last_updated: new Date().toISOString() 
-        }).eq('id', itemId);
-        if (!error) await get().syncData();
-      },
-
-      createTask: async (data) => {
-        if (!supabase) return;
-        const id = `t-${Date.now()}`;
-        const room = get().rooms.find(r => r.id === data.roomId);
-        const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        
-        await supabase.from('tasks').insert({
-          id, room_id: data.roomId, assigned_to: data.assignedTo,
-          assigned_by_name: get().currentUser?.fullName || 'Gerente',
-          status: 'pendente', deadline: data.deadline, notes: data.notes,
-          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {})
-        });
-        await supabase.from('rooms').update({ status: 'limpando' }).eq('id', data.roomId);
+        await supabase.from('users').update({ password: newPass }).eq('id', userId);
         await get().syncData();
       },
 
       updateTask: async (taskId, updates) => {
-        // ATUALIZAÇÃO OTIMISTA: Refletir na UI imediatamente
         const prevTasks = get().tasks;
         const updatedTasks = prevTasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
         set({ tasks: updatedTasks });
 
         if (!supabase) return;
         
-        // Formata para o banco (snake_case)
         const dbFields: any = {};
         if (updates.status !== undefined) dbFields.status = updates.status;
         if (updates.checklist !== undefined) dbFields.checklist = updates.checklist;
@@ -231,10 +208,8 @@ export const useStore = create<AppState>()(
         if (updates.fatorMamaeVerified !== undefined) dbFields.fator_mamae_verified = updates.fatorMamaeVerified;
 
         const { error } = await supabase.from('tasks').update(dbFields).eq('id', taskId);
-        
         if (error) {
-           console.error("Sync back error:", error);
-           // Se der erro, revertemos para o estado do banco
+           console.error("Supabase Error:", error);
            await get().syncData(); 
         }
       },
@@ -254,11 +229,55 @@ export const useStore = create<AppState>()(
         await get().syncData();
       },
 
+      // Added missing method for iCal updates
+      updateRoomICal: async (roomId, icalUrl) => {
+        if (!supabase) return;
+        await supabase.from('rooms').update({ ical_url: icalUrl }).eq('id', roomId);
+        await get().syncData();
+      },
+
+      // Added missing placeholder for iCal sync
+      syncICal: async (roomId) => {
+        console.log("Synchronizing iCal for unit:", roomId);
+        await get().syncData();
+      },
+
+      createTask: async (data) => {
+        if (!supabase) return;
+        const id = `t-${Date.now()}`;
+        const room = get().rooms.find(r => r.id === data.roomId);
+        const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
+        
+        await supabase.from('tasks').insert({
+          id, room_id: data.roomId, assigned_to: data.assignedTo,
+          assigned_by_name: get().currentUser?.fullName || 'Gerente',
+          status: 'pendente', deadline: data.deadline, notes: data.notes,
+          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {})
+        });
+        await supabase.from('rooms').update({ status: 'limpando' }).eq('id', data.roomId);
+        await get().syncData();
+      },
+
+      addLaundry: async (item) => {
+        if (!supabase) return;
+        const id = `l-${Date.now()}`;
+        await supabase.from('laundry').insert({
+          id, type: item.type, quantity: item.quantity, stage: item.stage,
+          room_origin: item.roomOrigin, last_updated: new Date().toISOString()
+        });
+        await get().syncData();
+      },
+
+      moveLaundry: async (itemId, stage) => {
+        if (!supabase) return;
+        await supabase.from('laundry').update({ stage, last_updated: new Date().toISOString() }).eq('id', itemId);
+        await get().syncData();
+      },
+
       addInventory: async (item) => {
         if (!supabase) return;
-        const id = `i-${Date.now()}`;
         await supabase.from('inventory').insert({
-          id, name: item.name, category: item.category, quantity: item.quantity,
+          id: `i-${Date.now()}`, name: item.name, category: item.category, quantity: item.quantity,
           min_stock: item.minStock, unit_cost: item.unitCost
         });
         await get().syncData();
@@ -278,9 +297,9 @@ export const useStore = create<AppState>()(
         if (!supabase) return;
         const id = `g-${Date.now()}`;
         await supabase.from('guests').insert({
-          id, full_name: data.fullName, document: data.document, check_in: data.check_in,
-          check_out: data.check_out, room_id: data.roomId, daily_rate: data.daily_rate,
-          total_value: data.total_value, payment_method: data.paymentMethod
+          id, full_name: data.fullName, document: data.document, check_in: data.checkIn,
+          check_out: data.checkOut, room_id: data.roomId, daily_rate: data.dailyRate,
+          total_value: data.totalValue, payment_method: data.paymentMethod
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
         await get().syncData();

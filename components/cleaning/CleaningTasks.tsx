@@ -7,6 +7,37 @@ import {
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
+// Função de compressão de imagem extremamente rápida e eficiente
+const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.src = base64Str;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60% para equilíbrio perfeito
+    };
+  });
+};
+
 const CleaningTasks: React.FC = () => {
   const { tasks, rooms, updateTask, approveTask, currentUser, users } = useStore();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -49,15 +80,13 @@ const CleaningTasks: React.FC = () => {
     }
   }, [activeTaskId, activeTask]);
 
-  // TIMER ESTÁVEL: Baseado no tempo de início real para evitar travamentos
   useEffect(() => {
     let interval: any;
     if (activeTask?.status === CleaningStatus.EM_PROGRESSO && activeTask.startedAt) {
       const startTime = new Date(activeTask.startedAt).getTime();
       const update = () => {
         const now = Date.now();
-        const diff = Math.max(0, Math.floor((now - startTime) / 1000));
-        setElapsed(diff);
+        setElapsed(Math.max(0, Math.floor((now - startTime) / 1000)));
       };
       update();
       interval = setInterval(update, 1000);
@@ -89,12 +118,16 @@ const CleaningTasks: React.FC = () => {
 
       const reader = new FileReader();
       reader.onloadend = async () => {
-        const base64 = reader.result as string;
-        setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: base64, uploading: false } }));
+        const rawBase64 = reader.result as string;
+        
+        // COMPRESSÃO EM TEMPO DE EXECUÇÃO
+        const compressedBase64 = await compressImage(rawBase64);
+        
+        setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: compressedBase64, uploading: false } }));
 
         const currentPhotos = (activeTask.photos || []) as any[];
         const otherPhotos = currentPhotos.filter((p: any) => p.type !== categoryId);
-        const newPhoto = { type: categoryId, url: base64, category: categoryLabel };
+        const newPhoto = { type: categoryId, url: compressedBase64, category: categoryLabel };
         
         const updates: any = { photos: [...otherPhotos, newPhoto] };
         if (categoryLabel === 'START') {
@@ -112,7 +145,6 @@ const CleaningTasks: React.FC = () => {
   const handleToggleCheck = async (item: string) => {
     if (!activeTask) return;
     const newChecklist = { ...activeTask.checklist, [item]: !activeTask.checklist[item] };
-    // Chamada otimista na store
     await updateTask(activeTask.id, { checklist: newChecklist });
   };
 
@@ -143,12 +175,22 @@ const CleaningTasks: React.FC = () => {
     setIsProcessing(false);
   };
 
+  // Fixed missing handleApprove function
   const handleApprove = async (taskId: string) => {
     setIsProcessing(true);
-    await approveTask(taskId);
-    setAuditTaskId(null);
-    setIsProcessing(false);
+    try {
+      await approveTask(taskId);
+      setAuditTaskId(null);
+    } catch (e) {
+      console.error("Erro ao aprovar:", e);
+    } finally {
+      setIsProcessing(false);
+    }
   };
+
+  const allChecksDone = activeTask ? Object.values(activeTask.checklist).every(v => v) : false;
+  // Opcional: Obrigar pelo menos uma foto do fator mamãe para liberar o botão
+  const hasMinPhotos = Object.keys(draftPhotos).length >= 1;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 md:space-y-8 pb-32 px-2 animate-in fade-in duration-500">
@@ -280,8 +322,9 @@ const CleaningTasks: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="bg-white fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-10 overscroll-none">
-          <div className="bg-slate-900 p-6 pt-10 text-white shrink-0">
+        <div className="fixed inset-0 z-[100] flex flex-col bg-white animate-in slide-in-from-bottom-10 overflow-hidden">
+          {/* HEADER FIXO DO MODAL */}
+          <div className="bg-slate-900 p-6 pt-12 text-white shrink-0 shadow-lg">
             <div className="flex justify-between items-center mb-4">
               <div>
                 <h2 className="text-4xl font-black tracking-tighter">UNIDADE {room?.number}</h2>
@@ -289,45 +332,46 @@ const CleaningTasks: React.FC = () => {
                   <Timer size={20} /> {formatTime(elapsed)}
                 </div>
               </div>
-              <button onClick={() => setActiveTaskId(null)} className="p-3 bg-white/10 rounded-full">
+              <button onClick={() => setActiveTaskId(null)} className="p-3 bg-white/10 rounded-full active:scale-90 transition-transform">
                 <X size={28} />
               </button>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-44 custom-scrollbar overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
+          {/* ÁREA DE CONTEÚDO SCROLLÁVEL */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-4 md:pb-8 custom-scrollbar overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
             <section className="space-y-3">
-              <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest">
+              <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest px-1">
                 <ClipboardCheck size={20} className="text-blue-600" /> Checklist Obrigatório
               </h3>
               <div className="grid gap-2">
                 {Object.keys(activeTask.checklist).map(item => (
-                  <label key={item} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer select-none active:scale-[0.98] ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-100'}`}>
+                  <label key={item} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer select-none active:scale-[0.98] ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400 shadow-inner' : 'bg-slate-50 border-slate-100'}`}>
                     <input 
                       type="checkbox" 
                       checked={activeTask.checklist[item]} 
                       onChange={() => handleToggleCheck(item)} 
-                      className="w-5 h-5 rounded text-emerald-600 border-slate-300 focus:ring-0" 
+                      className="w-6 h-6 rounded-lg text-emerald-600 border-slate-300 focus:ring-0" 
                     />
-                    <span className={`font-bold text-xs leading-tight transition-colors ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
+                    <span className={`font-bold text-xs leading-tight transition-colors flex-1 ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
                   </label>
                 ))}
               </div>
             </section>
 
             <section className="space-y-3">
-              <h3 className="font-black text-sm flex items-center gap-2 text-amber-600 uppercase tracking-widest">
+              <h3 className="font-black text-sm flex items-center gap-2 text-amber-600 uppercase tracking-widest px-1">
                 <ShieldCheck size={20} /> Fator Mamãe (Fotos)
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const draft = draftPhotos[req.id];
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner hover:border-blue-300 transition-colors">
+                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner hover:border-blue-300 transition-colors active:scale-95">
                       {draft?.uploading ? (
                         <div className="flex flex-col items-center gap-2 animate-pulse">
                           <Loader2 className="animate-spin text-blue-600" size={24} />
-                          <span className="text-[7px] font-black text-blue-600 uppercase">Enviando...</span>
+                          <span className="text-[7px] font-black text-blue-600 uppercase">Otimizando...</span>
                         </div>
                       ) : draft?.url ? (
                         <img src={draft.url} className="w-full h-full object-cover" />
@@ -344,21 +388,24 @@ const CleaningTasks: React.FC = () => {
             </section>
           </div>
 
-          <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 z-[110] shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+          {/* FOOTER FIXO - NUNCA SOME */}
+          <div className="shrink-0 p-4 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-bottom">
             <button 
-              disabled={isProcessing || !Object.values(activeTask.checklist).every(v => v)} 
+              disabled={isProcessing || !allChecksDone} 
               onClick={handleComplete} 
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white active:scale-95' : 'bg-slate-100 text-slate-300'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 ${allChecksDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
             >
-              {isProcessing ? <Loader2 className="animate-spin" /> : <>CONCLUIR E NOTIFICAR <ArrowRight size={20} /></>}
+              {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR TAREFA <ArrowRight size={20} /></>}
             </button>
+            {/* Espaçador para mobile tab bar */}
+            <div className="h-4 md:hidden"></div>
           </div>
         </div>
       )}
 
       {/* MODAL DE AUDITORIA DO GERENTE */}
       {auditTaskId && auditTask && (
-        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300 overscroll-none">
+        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300 overflow-hidden">
            <div className="bg-slate-900 p-6 pt-12 text-white flex justify-between items-center shrink-0">
               <div>
                 <h2 className="text-3xl font-black">AUDITORIA Q.{rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
@@ -367,14 +414,14 @@ const CleaningTasks: React.FC = () => {
               <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={24}/></button>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-36 overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
+           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-4 custom-scrollbar">
               <section className="space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Conferência de Checklist</h3>
                 <div className="grid gap-2">
                   {Object.entries(auditTask.checklist).map(([item, checked]) => (
                     <div key={item} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
                       {checked ? <CheckCircle2 className="text-emerald-500" size={18} /> : <AlertCircle className="text-rose-400" size={18} />}
-                      <span className={`text-xs font-bold ${checked ? 'text-slate-700' : 'text-rose-500 line-through'}`}>{item}</span>
+                      <span className={`text-xs font-bold ${checked ? 'text-slate-700' : 'text-slate-500 line-through'}`}>{item}</span>
                     </div>
                   ))}
                 </div>
@@ -383,22 +430,19 @@ const CleaningTasks: React.FC = () => {
               <section className="space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Evidências Fator Mamãe</h3>
                 <div className="grid grid-cols-1 gap-4">
-                  {FATOR_MAMAE_REQUIREMENTS.map(req => {
-                    const photo = (auditTask.photos as any[])?.find((p: any) => p.type === req.id);
-                    return (
-                      <div key={req.id} className="space-y-2">
-                        <p className="text-[10px] font-black text-slate-500 uppercase">{req.label}</p>
+                  {(auditTask.photos as any[])?.map((photo: any, idx: number) => (
+                      <div key={idx} className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase">FOTO {idx + 1}</p>
                         <div className="aspect-video bg-slate-100 rounded-2xl overflow-hidden border-2 border-slate-200">
-                           {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px]">FOTO NÃO ENVIADA</div>}
+                           <img src={photo.url} className="w-full h-full object-cover" />
                         </div>
                       </div>
-                    )
-                  })}
+                  ))}
                 </div>
               </section>
            </div>
 
-           <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 flex gap-3 z-[110] shadow-[0_-10px_30px_rgba(0,0,0,0.05)]">
+           <div className="shrink-0 p-4 bg-white border-t border-slate-100 flex gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-bottom">
               <button 
                 disabled={isProcessing}
                 onClick={() => handleApprove(auditTask.id)}

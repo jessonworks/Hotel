@@ -16,13 +16,20 @@ import Login from './components/auth/Login';
 import TeamManagement from './components/auth/TeamManagement';
 
 const App: React.FC = () => {
-  const { currentUser, checkConnection } = useStore();
+  const { currentUser, checkConnection, subscribeToChanges, syncData } = useStore();
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      checkConnection();
-    }, 60000);
+    // Sincronização inicial e realtime
+    if (currentUser) {
+      syncData();
+      const unsubscribe = subscribeToChanges();
+      return () => unsubscribe();
+    }
+  }, [currentUser, syncData, subscribeToChanges]);
+
+  useEffect(() => {
     checkConnection();
+    const interval = setInterval(() => checkConnection(), 60000);
     return () => clearInterval(interval);
   }, [checkConnection]);
 
@@ -30,7 +37,6 @@ const App: React.FC = () => {
     return <Login />;
   }
 
-  // Lógica de cargo ultra-resiliente
   const roleStr = (currentUser?.role || '').toLowerCase();
   const isAdmin = roleStr.includes('admin');
   const isManager = roleStr.includes('gerente') || roleStr.includes('manager') || isAdmin;
@@ -38,10 +44,7 @@ const App: React.FC = () => {
   return (
     <HashRouter>
       <div className="flex flex-col md:flex-row min-h-screen w-full bg-gray-50 overflow-hidden">
-        {/* Menu Lateral / Mobile */}
         <Sidebar />
-        
-        {/* Conteúdo Principal */}
         <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
           <Header />
           <main className="flex-1 overflow-y-auto p-4 md:p-6 pb-24 md:pb-6 custom-scrollbar">
@@ -49,14 +52,11 @@ const App: React.FC = () => {
               <Route path="/" element={<Dashboard />} />
               <Route path="/cleaning" element={<CleaningTasks />} />
               <Route path="/laundry" element={<LaundryKanban />} />
-              
-              {/* Rotas restritas */}
               <Route path="/rooms" element={isManager ? <RoomList /> : <Navigate to="/" />} />
               <Route path="/guests" element={isManager ? <GuestManagement /> : <Navigate to="/" />} />
               <Route path="/inventory" element={isManager ? <InventoryDashboard /> : <Navigate to="/" />} />
               <Route path="/team" element={isManager ? <TeamManagement /> : <Navigate to="/" />} />
               <Route path="/financial" element={isAdmin ? <FinancialDashboard /> : <Navigate to="/" />} />
-
               <Route path="*" element={<Navigate to="/" />} />
             </Routes>
           </main>

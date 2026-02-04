@@ -89,7 +89,6 @@ const generateInitialRooms = (): Room[] => {
   return rooms;
 };
 
-// IDs ATUALIZADOS CONFORME PRINT DO SUPABASE PARA SINCRONIA TOTAL
 const INITIAL_USERS: User[] = [
   { id: 'u-1770047468423', email: 'rose@hotel.com', fullName: 'rose', role: UserRole.STAFF, password: 'rose123' },
   { id: 'u-1770047505927', email: 'karine@hotel.com', fullName: 'karine', role: UserRole.MANAGER, password: '123' },
@@ -154,8 +153,19 @@ export const useStore = create<AppState>()(
             supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20)
           ]);
           
-          if (uD) set({ users: uD.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: normalizeRole(u.role, u.email), password: u.password })) });
-          if (rD) set({ rooms: rD.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url })) });
+          if (uD && uD.length > 0) set({ users: uD.map(u => ({ id: u.id, email: u.email, fullName: u.full_name, role: normalizeRole(u.role, u.email), password: u.password })) });
+          
+          if (rD && rD.length > 0) {
+            set({ rooms: rD.map(r => ({ id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, maxGuests: r.max_guests, bedsCount: r.beds_count || 0, hasMinibar: r.has_minibar, hasBalcony: r.has_balcony, icalUrl: r.ical_url })) });
+          } else if (get().rooms.length > 0 && rD && rD.length === 0) {
+            // Se o banco de quartos está vazio, vamos subir os iniciais para garantir que apareçam
+            const initial = get().rooms;
+            await supabase.from('rooms').upsert(initial.map(r => ({
+              id: r.id, number: r.number, floor: r.floor, type: r.type, category: r.category, status: r.status, 
+              max_guests: r.maxGuests, beds_count: r.bedsCount, has_minibar: r.hasMinibar, has_balcony: r.hasBalcony
+            })));
+          }
+
           if (tD) set({ tasks: tD.map(t => ({ 
             id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name, 
             status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at, 
@@ -170,7 +180,6 @@ export const useStore = create<AppState>()(
       login: async (email, password) => {
         const lowerEmail = (email || '').toLowerCase().trim();
         const pwd = (password || '').trim();
-        
         if (supabase) {
            try {
              const { data, error } = await supabase.from('users').select('*').eq('email', lowerEmail).eq('password', pwd).maybeSingle();
@@ -182,7 +191,6 @@ export const useStore = create<AppState>()(
              }
            } catch(e) {}
         }
-
         const localUser = get().users.find(u => u.email.toLowerCase() === lowerEmail && u.password === pwd);
         if (localUser) {
           set({ currentUser: { ...localUser, role: normalizeRole(localUser.role, localUser.email) } });
@@ -194,42 +202,22 @@ export const useStore = create<AppState>()(
       createTask: async (data) => {
         const existing = get().tasks.find(t => t.roomId === data.roomId && t.status !== CleaningStatus.APROVADO);
         if (existing) return;
-
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
         const assignedUser = get().users.find(u => u.id === data.assignedTo);
         const template = CHECKLIST_TEMPLATES[data.roomId!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        
         const newTask: CleaningTask = { 
           id, roomId: data.roomId!, assignedTo: data.assignedTo, assignedByName: assignedUser?.fullName || 'Staff', 
           status: CleaningStatus.PENDENTE, deadline: data.deadline, notes: data.notes, bedsToMake: room?.bedsCount || 0, 
           checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}), photos: [], fatorMamaeVerified: false 
         };
-
-        // Salva local primeiro para feedback imediato
-        set(state => ({ 
-          tasks: [...state.tasks, newTask], 
-          rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) 
-        }));
-
-        // Persiste no Supabase com mapeamento rigoroso
+        set(state => ({ tasks: [...state.tasks, newTask], rooms: state.rooms.map(r => r.id === data.roomId ? { ...r, status: RoomStatus.LIMPANDO } : r) }));
         if (supabase) {
           try {
-            await supabase.from('tasks').insert({ 
-              id: newTask.id, 
-              room_id: newTask.roomId, 
-              assigned_to: newTask.assignedTo, 
-              assigned_by_name: newTask.assignedByName,
-              status: newTask.status, 
-              deadline: newTask.deadline, 
-              notes: newTask.notes, 
-              beds_to_make: newTask.bedsToMake,
-              checklist: newTask.checklist, 
-              photos: newTask.photos 
-            });
+            await supabase.from('tasks').insert({ id: newTask.id, room_id: newTask.roomId, assigned_to: newTask.assignedTo, assigned_by_name: newTask.assignedByName, status: newTask.status, deadline: newTask.deadline, notes: newTask.notes, beds_to_make: newTask.bedsToMake, checklist: newTask.checklist, photos: newTask.photos });
             await supabase.from('rooms').update({ status: RoomStatus.LIMPANDO }).eq('id', data.roomId);
-            await get().syncData(); // Sincroniza para garantir que todos vejam
-          } catch (e) { console.error("Erro ao persistir tarefa:", e); }
+            await get().syncData();
+          } catch (e) {}
         }
       },
 
@@ -256,18 +244,10 @@ export const useStore = create<AppState>()(
         const id = `a-${Date.now()}`;
         const createdAt = new Date().toISOString();
         const authorName = get().currentUser?.fullName || 'Sistema';
-        
         set(state => ({ announcements: [{ id, authorName, content, priority, createdAt }, ...state.announcements] }));
-        
         if (supabase) {
           try {
-            await supabase.from('announcements').insert({ 
-              id, 
-              author_name: authorName, 
-              content, 
-              priority, 
-              created_at: createdAt 
-            });
+            await supabase.from('announcements').insert({ id, author_name: authorName, content, priority, created_at: createdAt });
             await get().syncData();
           } catch(e) {}
         }
@@ -276,10 +256,7 @@ export const useStore = create<AppState>()(
       approveTask: async (taskId) => {
         const task = get().tasks.find(t => t.id === taskId);
         if (!task) return;
-        set(state => ({ 
-          tasks: state.tasks.filter(t => t.id !== taskId),
-          rooms: state.rooms.map(r => r.id === task.roomId ? { ...r, status: RoomStatus.DISPONIVEL } : r) 
-        }));
+        set(state => ({ tasks: state.tasks.filter(t => t.id !== taskId), rooms: state.rooms.map(r => r.id === task.roomId ? { ...r, status: RoomStatus.DISPONIVEL } : r) }));
         if (supabase) {
           await supabase.from('tasks').update({ status: CleaningStatus.APROVADO }).eq('id', taskId);
           await supabase.from('rooms').update({ status: RoomStatus.DISPONIVEL }).eq('id', task.roomId);
@@ -296,9 +273,7 @@ export const useStore = create<AppState>()(
         const user = get().currentUser;
         if (!user) return;
         set({ currentUser: { ...user, ...upd } });
-        if (supabase) {
-          await supabase.from('users').update({ full_name: upd.fullName || user.fullName, email: upd.email || user.email }).eq('id', user.id);
-        }
+        if (supabase) await supabase.from('users').update({ full_name: upd.fullName || user.fullName, email: upd.email || user.email }).eq('id', user.id);
       },
 
       logout: () => set({ currentUser: null, tasks: [] }),
@@ -355,7 +330,7 @@ export const useStore = create<AppState>()(
         set(state => ({ users: state.users.map(u => u.id === id ? { ...u, password: p } : u) })); 
         if (supabase) await supabase.from('users').update({ password: p }).eq('id', id);
       },
-      generateAIBriefing: async () => { set({ managerBriefing: "Briefing operacional gerado." }); },
+      generateAIBriefing: async () => { set({ managerBriefing: "Briefing gerado." }); },
       updateRoomICal: async (roomId, url) => {
         set(state => ({ rooms: state.rooms.map(r => r.id === roomId ? { ...r, icalUrl: url } : r) }));
         if (supabase) await supabase.from('rooms').update({ ical_url: url }).eq('id', roomId);

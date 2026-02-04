@@ -8,7 +8,7 @@ import {
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
 const CleaningTasks: React.FC = () => {
-  const { tasks, rooms, updateTask, approveTask, currentUser } = useStore();
+  const { tasks, rooms, updateTask, approveTask, currentUser, users } = useStore();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -16,16 +16,21 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
+  // Minhas tarefas (Staff)
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
+  // Auditorias para o Gerente
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
-  const teamActivity = tasks.filter(t => 
-    t.assignedTo !== currentUser?.id && 
-    (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
-  );
+
+  // Atividade da equipe: mostra apenas colaboradores com cargo STAFF que têm tarefas pendentes ou em progresso
+  const teamActivity = tasks.filter(t => {
+    const assignedUser = users.find(u => u.id === t.assignedTo);
+    return assignedUser?.role === UserRole.STAFF && 
+           (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO);
+  });
 
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
@@ -106,22 +111,22 @@ const CleaningTasks: React.FC = () => {
               {pendingAudits.length > 0 && (
                 <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
-                    <div className="p-2 bg-amber-500 text-white rounded-xl shadow-lg shadow-amber-500/20"><ShieldCheck size={20} /></div>
+                    <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-lg shadow-emerald-500/20"><CheckCircle2 size={20} /></div>
                     <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Aprovações Pendentes</h2>
                   </div>
                   <div className="grid gap-6">
                     {pendingAudits.map(task => {
                       const tr = rooms.find(r => r.id === task.roomId);
                       return (
-                        <div key={task.id} className="bg-white border-2 border-amber-200 rounded-[2.5rem] p-6 shadow-2xl transition-all">
+                        <div key={task.id} className="bg-white border-2 border-slate-100 rounded-[2.5rem] p-6 shadow-xl transition-all">
                           <div className="flex flex-col sm:flex-row justify-between items-center gap-6">
                             <div className="flex items-center gap-5">
-                              <div className="w-20 h-20 bg-amber-50 rounded-3xl flex items-center justify-center text-amber-600 font-black text-3xl border border-amber-100 shadow-inner">
+                              <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 font-black text-3xl border border-blue-100 shadow-inner">
                                 {tr?.number}
                               </div>
                               <div className="space-y-1">
                                 <p className="text-xs font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-1"><UserIcon size={12}/> {task.assignedByName}</p>
-                                <p className="text-sm font-bold text-slate-700">Faxina de {task.durationMinutes || 1} min</p>
+                                <p className="text-sm font-bold text-slate-700">Concluído em {task.durationMinutes || 1} min</p>
                               </div>
                             </div>
                             <button 
@@ -142,7 +147,7 @@ const CleaningTasks: React.FC = () => {
                 <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><LayoutDashboard size={20} /></div>
-                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe em Atividade</h2>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe de Campo em Atividade</h2>
                   </div>
                   <div className="grid gap-3">
                     {teamActivity.map(task => {

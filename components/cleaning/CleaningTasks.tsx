@@ -16,16 +16,16 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
-  // MINHAS TAREFAS (Aparece para a Rose se o ID for o dela)
+  // MINHAS TAREFAS (Exclusivo para o Staff logado)
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // AUDITORIAS (Só para Admin/Manager)
+  // APROVAÇÕES PENDENTES (Apenas Auditorias Reais para Admin/Manager)
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
 
-  // EQUIPE EM ATIVIDADE (Apenas quem REALMENTE tem tarefa STAFF ativa)
+  // EQUIPE EM ATIVIDADE (Apenas STAFFs que estão trabalhando agora)
   const teamActivity = tasks.filter(t => {
     const assignedUser = users.find(u => u.id === t.assignedTo);
     return assignedUser?.role === UserRole.STAFF && 
@@ -147,7 +147,7 @@ const CleaningTasks: React.FC = () => {
                 <section className="space-y-4">
                   <div className="flex items-center gap-3 px-2">
                     <div className="p-2 bg-blue-100 text-blue-600 rounded-lg"><LayoutDashboard size={20} /></div>
-                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe de Campo em Atividade</h2>
+                    <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Equipe em Atividade</h2>
                   </div>
                   <div className="grid gap-3">
                     {teamActivity.map(task => {

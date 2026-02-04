@@ -16,16 +16,16 @@ const CleaningTasks: React.FC = () => {
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
-  // Minhas tarefas (Staff)
+  // MINHAS TAREFAS (Aparece para a Rose se o ID for o dela)
   const myTasks = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO)
   );
 
-  // Auditorias para o Gerente
+  // AUDITORIAS (Só para Admin/Manager)
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
 
-  // Atividade da equipe: mostra apenas colaboradores com cargo STAFF que têm tarefas pendentes ou em progresso
+  // EQUIPE EM ATIVIDADE (Apenas quem REALMENTE tem tarefa STAFF ativa)
   const teamActivity = tasks.filter(t => {
     const assignedUser = users.find(u => u.id === t.assignedTo);
     return assignedUser?.role === UserRole.STAFF && 

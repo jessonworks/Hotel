@@ -14,9 +14,10 @@ import InventoryDashboard from './components/inventory/InventoryDashboard';
 import FinancialDashboard from './components/financial/FinancialDashboard';
 import Login from './components/auth/Login';
 import TeamManagement from './components/auth/TeamManagement';
+import { Hotel, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { currentUser, checkConnection, subscribeToChanges, syncData } = useStore();
+  const { currentUser, checkConnection, subscribeToChanges, syncData, isInitialLoading } = useStore();
 
   useEffect(() => {
     // Sincronização inicial e realtime
@@ -35,6 +36,21 @@ const App: React.FC = () => {
 
   if (!currentUser) {
     return <Login />;
+  }
+
+  // Tela de Carregamento Inicial
+  if (isInitialLoading) {
+    return (
+      <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-4">
+        <div className="bg-blue-600 p-6 rounded-[2.5rem] shadow-2xl mb-8 animate-bounce">
+          <Hotel size={64} className="text-white" />
+        </div>
+        <div className="flex items-center gap-3 text-white font-black uppercase tracking-[0.3em] text-sm">
+          <Loader2 className="animate-spin text-blue-400" size={24} />
+          Sincronizando Dados...
+        </div>
+      </div>
+    );
   }
 
   const roleStr = (currentUser?.role || '').toLowerCase();

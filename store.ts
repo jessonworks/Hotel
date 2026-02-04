@@ -27,6 +27,7 @@ interface AppState {
   announcements: Announcement[];
   transactions: Transaction[];
   isSupabaseConnected: boolean;
+  isInitialLoading: boolean;
   connectionError: string | null;
   
   login: (email: string, password?: string) => Promise<boolean>;
@@ -74,6 +75,7 @@ export const useStore = create<AppState>()(
       announcements: [],
       transactions: [],
       isSupabaseConnected: false,
+      isInitialLoading: true,
       connectionError: null,
 
       checkConnection: async () => {
@@ -102,6 +104,7 @@ export const useStore = create<AppState>()(
       syncData: async () => {
         if (!supabase) return;
         try {
+          // Mantém o loading se for a primeira vez
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
@@ -147,7 +150,7 @@ export const useStore = create<AppState>()(
           })) });
 
           if (aRes.data) set({ announcements: aRes.data.map(a => ({
-              id: a.id, author_name: a.author_name, content: a.content, priority: a.priority as any, created_at: a.created_at
+              id: a.id, authorName: a.author_name, content: a.content, priority: a.priority as any, createdAt: a.created_at
           })) });
 
           if (trRes.data) set({ transactions: trRes.data.map(tr => ({
@@ -155,7 +158,11 @@ export const useStore = create<AppState>()(
               amount: tr.amount, description: tr.description
           })) });
 
-        } catch (e) { console.error("Sync Error:", e); }
+          set({ isInitialLoading: false });
+        } catch (e) { 
+          console.error("Sync Error:", e);
+          set({ isInitialLoading: false });
+        }
       },
 
       login: async (email, password) => {
@@ -176,7 +183,6 @@ export const useStore = create<AppState>()(
         return false;
       },
 
-      // Added missing method for updating profile
       updateCurrentUser: (updates) => {
         const current = get().currentUser;
         if (current) {
@@ -184,7 +190,6 @@ export const useStore = create<AppState>()(
         }
       },
 
-      // Added missing method for password change
       updateUserPassword: async (userId, newPass) => {
         if (!supabase) return;
         await supabase.from('users').update({ password: newPass }).eq('id', userId);
@@ -229,14 +234,12 @@ export const useStore = create<AppState>()(
         await get().syncData();
       },
 
-      // Added missing method for iCal updates
       updateRoomICal: async (roomId, icalUrl) => {
         if (!supabase) return;
         await supabase.from('rooms').update({ ical_url: icalUrl }).eq('id', roomId);
         await get().syncData();
       },
 
-      // Added missing placeholder for iCal sync
       syncICal: async (roomId) => {
         console.log("Synchronizing iCal for unit:", roomId);
         await get().syncData();

@@ -149,33 +149,37 @@ const CleaningTasks: React.FC = () => {
   };
 
   const handleComplete = async () => {
-    if (!activeTask) return;
+    if (!activeTask || isProcessing) return;
     setIsProcessing(true);
-    const finalDuration = Math.max(1, Math.floor(elapsed / 60));
-    
-    const finalPhotos = Object.entries(draftPhotos).map(([type, data]: [string, any]) => ({
-      type,
-      url: data.url,
-      category: 'MAMAE' as const
-    }));
+    try {
+      const finalDuration = Math.max(1, Math.floor(elapsed / 60));
+      
+      const finalPhotos = Object.entries(draftPhotos).map(([type, data]: [string, any]) => ({
+        type,
+        url: data.url,
+        category: 'MAMAE' as const
+      }));
 
-    await updateTask(activeTask.id, { 
-      status: CleaningStatus.AGUARDANDO_APROVACAO,
-      completedAt: new Date().toISOString(),
-      durationMinutes: finalDuration,
-      fatorMamaeVerified: true,
-      photos: finalPhotos
-    });
-    
-    const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Conferência Pendente ✅`;
-    window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
-    
-    setActiveTaskId(null);
-    setElapsed(0);
-    setIsProcessing(false);
+      await updateTask(activeTask.id, { 
+        status: CleaningStatus.AGUARDANDO_APROVACAO,
+        completedAt: new Date().toISOString(),
+        durationMinutes: finalDuration,
+        fatorMamaeVerified: true,
+        photos: finalPhotos
+      });
+      
+      const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Conferência Pendente ✅`;
+      window.open(`https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(message)}`, '_blank');
+      
+      setActiveTaskId(null);
+      setElapsed(0);
+    } catch (e) {
+      console.error("Erro ao finalizar:", e);
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
-  // Fixed missing handleApprove function
   const handleApprove = async (taskId: string) => {
     setIsProcessing(true);
     try {
@@ -189,8 +193,6 @@ const CleaningTasks: React.FC = () => {
   };
 
   const allChecksDone = activeTask ? Object.values(activeTask.checklist).every(v => v) : false;
-  // Opcional: Obrigar pelo menos uma foto do fator mamãe para liberar o botão
-  const hasMinPhotos = Object.keys(draftPhotos).length >= 1;
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 md:space-y-8 pb-32 px-2 animate-in fade-in duration-500">
@@ -322,7 +324,7 @@ const CleaningTasks: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="fixed inset-0 z-[100] flex flex-col bg-white animate-in slide-in-from-bottom-10 overflow-hidden">
+        <div className="fixed inset-0 z-[200] flex flex-col bg-white h-[100dvh] md:h-screen animate-in slide-in-from-bottom-10 overflow-hidden">
           {/* HEADER FIXO DO MODAL */}
           <div className="bg-slate-900 p-6 pt-12 text-white shrink-0 shadow-lg">
             <div className="flex justify-between items-center mb-4">
@@ -339,7 +341,7 @@ const CleaningTasks: React.FC = () => {
           </div>
 
           {/* ÁREA DE CONTEÚDO SCROLLÁVEL */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-4 md:pb-8 custom-scrollbar overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-6 custom-scrollbar overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
             <section className="space-y-3">
               <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest px-1">
                 <ClipboardCheck size={20} className="text-blue-600" /> Checklist Obrigatório
@@ -388,24 +390,22 @@ const CleaningTasks: React.FC = () => {
             </section>
           </div>
 
-          {/* FOOTER FIXO - NUNCA SOME */}
-          <div className="shrink-0 p-4 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-bottom">
+          {/* FOOTER FIXO E SEMPRE VISÍVEL */}
+          <div className="shrink-0 p-4 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] pb-safe">
             <button 
               disabled={isProcessing || !allChecksDone} 
               onClick={handleComplete} 
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 ${allChecksDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 ${allChecksDone && !isProcessing ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
             >
               {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR TAREFA <ArrowRight size={20} /></>}
             </button>
-            {/* Espaçador para mobile tab bar */}
-            <div className="h-4 md:hidden"></div>
           </div>
         </div>
       )}
 
       {/* MODAL DE AUDITORIA DO GERENTE */}
       {auditTaskId && auditTask && (
-        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300 overflow-hidden">
+        <div className="fixed inset-0 z-[200] bg-white flex flex-col h-[100dvh] md:h-screen animate-in slide-in-from-bottom-20 duration-300 overflow-hidden">
            <div className="bg-slate-900 p-6 pt-12 text-white flex justify-between items-center shrink-0">
               <div>
                 <h2 className="text-3xl font-black">AUDITORIA Q.{rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
@@ -414,7 +414,7 @@ const CleaningTasks: React.FC = () => {
               <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={24}/></button>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-4 custom-scrollbar">
+           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-6 custom-scrollbar">
               <section className="space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Conferência de Checklist</h3>
                 <div className="grid gap-2">
@@ -442,7 +442,7 @@ const CleaningTasks: React.FC = () => {
               </section>
            </div>
 
-           <div className="shrink-0 p-4 bg-white border-t border-slate-100 flex gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.08)] safe-area-bottom">
+           <div className="shrink-0 p-4 bg-white border-t border-slate-100 flex gap-3 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] pb-safe">
               <button 
                 disabled={isProcessing}
                 onClick={() => handleApprove(auditTask.id)}

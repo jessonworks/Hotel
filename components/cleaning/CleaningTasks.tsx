@@ -3,13 +3,15 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useStore } from '../../store';
 import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
-  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, User as UserIcon, LayoutDashboard, MessageSquareText
+  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, LayoutDashboard, MessageSquareText, Loader2, Eye, Check, AlertCircle
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
 const CleaningTasks: React.FC = () => {
   const { tasks, rooms, updateTask, approveTask, currentUser, users } = useStore();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
+  const [auditTaskId, setAuditTaskId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
@@ -24,12 +26,11 @@ const CleaningTasks: React.FC = () => {
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
 
   const teamActivity = tasks.filter(t => {
-    const assignedUser = users.find(u => u.id === t.assignedTo);
-    return assignedUser?.role === UserRole.STAFF && 
-           (t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO);
+    return t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO;
   });
 
   const activeTask = tasks.find(t => t.id === activeTaskId);
+  const auditTask = tasks.find(t => t.id === auditTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
   useEffect(() => {
@@ -52,21 +53,26 @@ const CleaningTasks: React.FC = () => {
   const handleStartPhoto = (taskId: string) => {
     setCapturingFor({ id: 'start_audit', category: 'START' });
     setActiveTaskId(taskId);
-    fileInputRef.current?.click();
+    setTimeout(() => fileInputRef.current?.click(), 100);
   };
 
-  const onFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0] && activeTask && capturingFor) {
       const file = e.target.files[0];
       const reader = new FileReader();
-      reader.onloadend = () => {
-        const photos = [...(activeTask.photos || []), { type: capturingFor.id, url: reader.result as string, category: capturingFor.category }];
-        const updates: any = { photos };
+      reader.onloadend = async () => {
+        // Importante: Pegar a lista mais atual de fotos para não sobrescrever
+        const currentPhotos = activeTask.photos || [];
+        // Filtra fotos da mesma categoria para substituir se necessário, ou apenas adiciona
+        const otherPhotos = currentPhotos.filter(p => p.type !== capturingFor.id);
+        const newPhoto = { type: capturingFor.id, url: reader.result as string, category: capturingFor.category };
+        
+        const updates: any = { photos: [...otherPhotos, newPhoto] };
         if (capturingFor.category === 'START') {
           updates.status = CleaningStatus.EM_PROGRESSO;
           updates.startedAt = new Date().toISOString();
         }
-        updateTask(activeTask.id, updates);
+        await updateTask(activeTask.id, updates);
         setCapturingFor(null);
       };
       reader.readAsDataURL(file);
@@ -79,10 +85,11 @@ const CleaningTasks: React.FC = () => {
     updateTask(activeTask.id, { checklist: newChecklist });
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
     if (!activeTask) return;
+    setIsProcessing(true);
     const finalDuration = Math.max(1, Math.floor(elapsed / 60));
-    updateTask(activeTask.id, { 
+    await updateTask(activeTask.id, { 
       status: CleaningStatus.AGUARDANDO_APROVACAO,
       completedAt: new Date().toISOString(),
       durationMinutes: finalDuration,
@@ -94,6 +101,14 @@ const CleaningTasks: React.FC = () => {
     
     setActiveTaskId(null);
     setElapsed(0);
+    setIsProcessing(false);
+  };
+
+  const handleApprove = async (taskId: string) => {
+    setIsProcessing(true);
+    await approveTask(taskId);
+    setAuditTaskId(null);
+    setIsProcessing(false);
   };
 
   return (
@@ -108,28 +123,29 @@ const CleaningTasks: React.FC = () => {
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 px-2">
                     <div className="p-1.5 bg-emerald-600 text-white rounded-lg shadow-sm"><CheckCircle2 size={16} /></div>
-                    <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">Aprovações</h2>
+                    <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">Aguardando Auditoria</h2>
                   </div>
                   <div className="grid gap-4">
                     {pendingAudits.map(task => {
                       const tr = rooms.find(r => r.id === task.roomId);
+                      const staff = users.find(u => u.id === task.assignedTo);
                       return (
                         <div key={task.id} className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
                           <div className="flex justify-between items-center gap-4">
                             <div className="flex items-center gap-3">
-                              <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600 font-black text-xl border border-blue-100">
+                              <div className="w-12 h-12 bg-blue-600 text-white rounded-2xl flex items-center justify-center font-black text-xl">
                                 {tr?.number}
                               </div>
                               <div className="space-y-0.5">
-                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{task.assignedByName}</p>
-                                <p className="text-xs font-bold text-slate-700">{task.durationMinutes || 1} min decorridos</p>
+                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{staff?.fullName || 'Equipe'}</p>
+                                <p className="text-xs font-bold text-slate-700">{task.durationMinutes || 1} min faxina</p>
                               </div>
                             </div>
                             <button 
-                              onClick={() => approveTask(task.id)}
-                              className="px-4 py-3 bg-emerald-600 text-white font-black rounded-xl flex items-center gap-2 hover:bg-emerald-700 transition-all active:scale-95 uppercase tracking-widest text-[10px]"
+                              onClick={() => setAuditTaskId(task.id)}
+                              className="px-6 py-3 bg-slate-900 text-white font-black rounded-xl flex items-center gap-2 hover:bg-blue-600 transition-all active:scale-95 uppercase tracking-widest text-[10px]"
                             >
-                              APROVAR
+                              <Eye size={14} /> REVISAR
                             </button>
                           </div>
                         </div>
@@ -143,20 +159,21 @@ const CleaningTasks: React.FC = () => {
                 <section className="space-y-3">
                   <div className="flex items-center gap-2 px-2">
                     <div className="p-1.5 bg-blue-100 text-blue-600 rounded-lg"><LayoutDashboard size={16} /></div>
-                    <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">Equipe Ativa</h2>
+                    <h2 className="text-lg font-black text-slate-900 uppercase tracking-tight">Equipe em Campo</h2>
                   </div>
                   <div className="grid gap-2">
                     {teamActivity.map(task => {
                       const tr = rooms.find(r => r.id === task.roomId);
+                      const staff = users.find(u => u.id === task.assignedTo);
                       const isWorking = task.status === CleaningStatus.EM_PROGRESSO;
                       return (
                         <div key={task.id} className="bg-white rounded-2xl border border-slate-100 p-3 flex items-center justify-between shadow-sm">
                           <div className="flex items-center gap-3">
-                            <div className="font-black text-slate-300 text-sm">#{tr?.number}</div>
-                            <p className="text-xs font-black text-slate-800">{task.assignedByName}</p>
+                            <div className="font-black text-blue-600 bg-blue-50 px-2 py-1 rounded-lg text-xs">Q.{tr?.number || '??'}</div>
+                            <p className="text-xs font-black text-slate-800">{staff?.fullName || 'Pendente'}</p>
                           </div>
                           <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isWorking ? 'bg-blue-600 text-white animate-pulse' : 'bg-slate-50 text-slate-400'}`}>
-                            {isWorking ? 'Trabalhando' : 'Pendente'}
+                            {isWorking ? 'Limpando' : 'Escalado'}
                           </div>
                         </div>
                       );
@@ -174,16 +191,16 @@ const CleaningTasks: React.FC = () => {
                   <ClipboardCheck size={28} />
                 </div>
                 <div>
-                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Minhas Faxinas</h2>
-                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Siga as instruções abaixo</p>
+                  <h2 className="text-2xl font-black text-slate-900 tracking-tight">Meu Painel</h2>
+                  <p className="text-[10px] text-slate-400 font-black uppercase tracking-widest">Faxinas Designadas</p>
                 </div>
               </header>
 
               {myTasks.length === 0 ? (
                 <div className="bg-white rounded-[2.5rem] border-2 border-dashed border-slate-200 p-12 text-center">
                   <CheckCircle2 size={48} className="text-slate-200 mx-auto mb-4" />
-                  <h3 className="text-slate-900 font-black text-xl mb-1">Tudo limpo por aqui!</h3>
-                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Nenhuma tarefa pendente no momento.</p>
+                  <h3 className="text-slate-900 font-black text-xl mb-1">Tudo OK!</h3>
+                  <p className="text-slate-400 font-bold text-[10px] uppercase tracking-widest">Nenhuma tarefa pendente.</p>
                 </div>
               ) : (
                 <div className="grid gap-4">
@@ -213,7 +230,7 @@ const CleaningTasks: React.FC = () => {
                           onClick={() => isNew ? handleStartPhoto(task.id) : setActiveTaskId(task.id)}
                           className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl hover:bg-blue-600 transition-all flex items-center justify-center gap-3 shadow-lg active:scale-95 text-sm tracking-widest uppercase"
                         >
-                          {isNew ? <><Camera size={20} /> INICIAR</> : <><Play size={20} /> CONTINUAR</>}
+                          {isNew ? <><Camera size={20} /> TIRAR FOTO E INICIAR</> : <><Play size={20} /> CONTINUAR CHECKLIST</>}
                         </button>
                       </div>
                     );
@@ -228,43 +245,43 @@ const CleaningTasks: React.FC = () => {
           <div className="bg-slate-900 p-6 pt-10 text-white shrink-0">
             <div className="flex justify-between items-center mb-4">
               <div>
-                <h2 className="text-5xl font-black tracking-tighter">{room?.number}</h2>
-                <div className="flex items-center gap-2 text-emerald-400 font-black text-2xl">
-                  <Timer size={24} /> {formatTime(elapsed)}
+                <h2 className="text-4xl font-black tracking-tighter">UNIDADE {room?.number}</h2>
+                <div className="flex items-center gap-2 text-emerald-400 font-black text-xl">
+                  <Timer size={20} /> {formatTime(elapsed)}
                 </div>
               </div>
-              <button onClick={() => setActiveTaskId(null)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full transition-colors">
-                <X size={32} />
+              <button onClick={() => setActiveTaskId(null)} className="p-3 bg-white/10 rounded-full">
+                <X size={28} />
               </button>
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-6 space-y-8 pb-32 custom-scrollbar">
-            <section className="space-y-4">
-              <h3 className="font-black text-lg flex items-center gap-3 text-slate-900 uppercase tracking-tight">
-                <ClipboardCheck size={24} className="text-blue-600" /> Checklist
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-32 custom-scrollbar">
+            <section className="space-y-3">
+              <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest">
+                <ClipboardCheck size={20} className="text-blue-600" /> Checklist Obrigatório
               </h3>
-              <div className="grid gap-3">
+              <div className="grid gap-2">
                 {Object.keys(activeTask.checklist).map(item => (
-                  <label key={item} className={`flex items-center gap-4 p-4 rounded-2xl border-2 transition-all cursor-pointer ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400 shadow-sm' : 'bg-slate-50 border-slate-100'}`}>
-                    <input type="checkbox" checked={activeTask.checklist[item]} onChange={() => handleToggleCheck(item)} className="w-6 h-6 rounded-md text-emerald-600 border-slate-300" />
-                    <span className={`font-bold text-sm leading-tight ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
+                  <label key={item} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-100'}`}>
+                    <input type="checkbox" checked={activeTask.checklist[item]} onChange={() => handleToggleCheck(item)} className="w-5 h-5 rounded text-emerald-600" />
+                    <span className={`font-bold text-xs leading-tight ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
                   </label>
                 ))}
               </div>
             </section>
 
-            <section className="space-y-4">
-              <h3 className="font-black text-lg flex items-center gap-3 text-amber-600 uppercase tracking-tight">
-                <ShieldCheck size={28} /> Fotos Fator Mamãe
+            <section className="space-y-3">
+              <h3 className="font-black text-sm flex items-center gap-2 text-amber-600 uppercase tracking-widest">
+                <ShieldCheck size={20} /> Fator Mamãe (Fotos)
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const photo = activeTask.photos?.find(p => p.type === req.id);
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-square bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl flex flex-col items-center justify-center overflow-hidden hover:border-amber-400 transition-all shadow-inner relative group">
+                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
                       {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : 
-                      <><Camera size={32} className="text-slate-300" /><span className="text-[8px] text-slate-400 uppercase font-black px-2 text-center mt-2 leading-tight">{req.label}</span></>}
+                      <><Camera size={24} className="text-slate-300" /><span className="text-[7px] text-slate-400 uppercase font-black px-2 text-center mt-1">{req.label}</span></>}
                     </button>
                   )
                 })}
@@ -272,15 +289,75 @@ const CleaningTasks: React.FC = () => {
             </section>
           </div>
 
-          <div className="p-6 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 z-[101]">
+          <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0">
             <button 
-              disabled={!Object.values(activeTask.checklist).every(v => v)} 
+              disabled={isProcessing || !Object.values(activeTask.checklist).every(v => v)} 
               onClick={handleComplete} 
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white active:scale-95' : 'bg-slate-100 text-slate-300 cursor-not-allowed'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
             >
-              FINALIZAR <ArrowRight size={24} />
+              {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR E NOTIFICAR <ArrowRight size={20} /></>}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* MODAL DE AUDITORIA DO GERENTE */}
+      {auditTaskId && auditTask && (
+        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300">
+           <div className="bg-slate-900 p-6 pt-12 text-white flex justify-between items-center shrink-0">
+              <div>
+                <h2 className="text-3xl font-black">AUDITORIA Q.{rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
+                <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">{users.find(u => u.id === auditTask.assignedTo)?.fullName}</p>
+              </div>
+              <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full"><X size={24}/></button>
+           </div>
+           
+           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-32">
+              <section className="space-y-4">
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Conferência de Checklist</h3>
+                <div className="grid gap-2">
+                  {Object.entries(auditTask.checklist).map(([item, checked]) => (
+                    <div key={item} className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+                      {checked ? <CheckCircle2 className="text-emerald-500" size={18} /> : <AlertCircle className="text-rose-400" size={18} />}
+                      <span className={`text-xs font-bold ${checked ? 'text-slate-700' : 'text-rose-500 line-through'}`}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="space-y-4">
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Evidências Fator Mamãe</h3>
+                <div className="grid grid-cols-1 gap-4">
+                  {FATOR_MAMAE_REQUIREMENTS.map(req => {
+                    const photo = auditTask.photos?.find(p => p.type === req.id);
+                    return (
+                      <div key={req.id} className="space-y-2">
+                        <p className="text-[10px] font-black text-slate-500 uppercase">{req.label}</p>
+                        <div className="aspect-video bg-slate-100 rounded-2xl overflow-hidden border-2 border-slate-200">
+                           {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 font-black text-[10px]">FOTO NÃO ENVIADA</div>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+           </div>
+
+           <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 flex gap-3">
+              <button 
+                disabled={isProcessing}
+                onClick={() => handleApprove(auditTask.id)}
+                className="flex-1 py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2 uppercase text-sm tracking-widest"
+              >
+                {isProcessing ? <Loader2 className="animate-spin" /> : <><Check size={20} /> APROVAR LIMPEZA</>}
+              </button>
+              <button 
+                onClick={() => setAuditTaskId(null)}
+                className="px-6 py-5 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]"
+              >
+                VOLTAR
+              </button>
+           </div>
         </div>
       )}
     </div>

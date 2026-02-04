@@ -137,7 +137,7 @@ export const useStore = create<AppState>()(
             set({ guests: gRes.data.map(g => ({
               id: g.id, fullName: g.full_name, document: g.document, checkIn: g.check_in,
               checkOut: g.check_out, roomId: g.room_id, dailyRate: g.daily_rate,
-              totalValue: g.total_value, paymentMethod: g.payment_method as PaymentMethod
+              totalValue: g.total_value, payment_method: g.payment_method as PaymentMethod
             })) });
           }
 
@@ -213,9 +213,13 @@ export const useStore = create<AppState>()(
       updateTask: async (taskId, updates) => {
         if (!supabase) return;
         await supabase.from('tasks').update({
-          status: updates.status, checklist: updates.checklist, photos: updates.photos,
-          started_at: updates.startedAt, completed_at: updates.completedAt,
-          duration_minutes: updates.durationMinutes, fator_mamae_verified: updates.fator_mamae_verified
+          status: updates.status, 
+          checklist: updates.checklist, 
+          photos: updates.photos,
+          started_at: updates.startedAt, 
+          completed_at: updates.completedAt,
+          duration_minutes: updates.durationMinutes, 
+          fator_mamae_verified: updates.fator_mamae_verified
         }).eq('id', taskId);
         await get().syncData();
       },

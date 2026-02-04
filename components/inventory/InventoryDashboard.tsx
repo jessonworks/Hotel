@@ -1,6 +1,6 @@
+
 import React, { useState } from 'react';
 import { useStore } from '../../store';
-// Add AlertCircle to the imports from lucide-react
 import { Package, Plus, X, ArrowUp, ArrowDown, DollarSign, Tag, AlertCircle } from 'lucide-react';
 
 const InventoryDashboard: React.FC = () => {
@@ -8,10 +8,10 @@ const InventoryDashboard: React.FC = () => {
   const [showAdd, setShowAdd] = useState(false);
   const [newItem, setNewItem] = useState({ name: '', category: 'Insumo', quantity: 0, minStock: 5, price: 0, unitCost: 0 });
 
-  const handleAdd = (e: React.FormEvent) => {
+  const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newItem.name) return;
-    addInventory(newItem);
+    await addInventory(newItem);
     setShowAdd(false);
     setNewItem({ name: '', category: 'Insumo', quantity: 0, minStock: 5, price: 0, unitCost: 0 });
   };
@@ -21,7 +21,7 @@ const InventoryDashboard: React.FC = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 tracking-tight">Estoque de Insumos</h1>
-          <p className="text-slate-500 font-medium font-sans">Controle de custos, reposição e balanço patrimonial.</p>
+          <p className="text-slate-500 font-medium font-sans">Controle de custos e reposição em tempo real.</p>
         </div>
         <button 
           onClick={() => setShowAdd(true)} 
@@ -40,7 +40,7 @@ const InventoryDashboard: React.FC = () => {
               </div>
               <div className="text-right">
                 <p className="text-3xl font-black text-slate-900">{item.quantity}</p>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Unidades em Saldo</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo Atual</p>
               </div>
             </div>
             
@@ -49,11 +49,11 @@ const InventoryDashboard: React.FC = () => {
             
             <div className="grid grid-cols-2 gap-4 py-6 border-y border-slate-50">
               <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">Custo Unitário</p>
-                <p className="font-black text-slate-900 text-lg">R$ {item.unitCost.toFixed(2)}</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">Custo Un.</p>
+                <p className="font-black text-slate-900 text-lg">R$ {Number(item.unitCost).toFixed(2)}</p>
               </div>
               <div>
-                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">Total em Estoque</p>
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-tighter mb-1">Total Saldo</p>
                 <p className="font-black text-emerald-600 text-lg">R$ {(item.quantity * item.unitCost).toFixed(2)}</p>
               </div>
             </div>
@@ -74,11 +74,10 @@ const InventoryDashboard: React.FC = () => {
               </button>
             </div>
             
-            {/* Added AlertCircle to fix the "Cannot find name 'AlertCircle'" error */}
             {item.quantity <= item.minStock && (
               <div className="mt-4 flex items-center gap-2 text-rose-500 bg-rose-50 p-3 rounded-xl animate-pulse">
                 <AlertCircle size={16} />
-                <span className="text-[10px] font-black uppercase">Abaixo do estoque mínimo!</span>
+                <span className="text-[10px] font-black uppercase tracking-tighter">Reposição Necessária!</span>
               </div>
             )}
           </div>
@@ -90,15 +89,12 @@ const InventoryDashboard: React.FC = () => {
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-10 animate-in zoom-in-95 duration-200">
             <div className="flex justify-between items-center mb-8">
               <h2 className="text-2xl font-black text-slate-900">Novo Insumo</h2>
-              <button onClick={() => setShowAdd(false)} className="text-slate-400 hover:text-slate-600 p-2 bg-slate-50 rounded-full"><X /></button>
+              <button onClick={() => setShowAdd(false)} className="text-slate-400 p-2 bg-slate-50 rounded-full"><X /></button>
             </div>
             <form onSubmit={handleAdd} className="space-y-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Nome do Produto</label>
-                <div className="relative">
-                  <Tag className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                  <input required placeholder="Ex: Detergente 5L" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all" onChange={e => setNewItem({...newItem, name: e.target.value})} />
-                </div>
+                <input required placeholder="Ex: Detergente 5L" className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all" onChange={e => setNewItem({...newItem, name: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -112,12 +108,9 @@ const InventoryDashboard: React.FC = () => {
               </div>
               <div className="space-y-2">
                 <label className="text-[10px] font-black uppercase text-slate-400 tracking-widest px-1">Custo Unitário (R$)</label>
-                <div className="relative">
-                  <DollarSign className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                  <input required type="number" step="0.01" placeholder="0.00" className="w-full pl-12 pr-4 py-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all" onChange={e => setNewItem({...newItem, unitCost: parseFloat(e.target.value)})} />
-                </div>
+                <input required type="number" step="0.01" placeholder="0.00" className="w-full p-4 bg-slate-50 border-none rounded-2xl font-bold focus:ring-2 focus:ring-blue-500 transition-all" onChange={e => setNewItem({...newItem, unitCost: parseFloat(e.target.value)})} />
               </div>
-              <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-[1.5rem] shadow-xl shadow-slate-900/20 hover:bg-slate-800 transition-all transform active:scale-95">CONFIRMAR CADASTRO</button>
+              <button type="submit" className="w-full py-5 bg-slate-900 text-white font-black rounded-[1.5rem] shadow-xl hover:bg-slate-800 transition-all transform active:scale-95">CONFIRMAR CADASTRO</button>
             </form>
           </div>
         </div>

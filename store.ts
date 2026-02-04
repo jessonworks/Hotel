@@ -39,6 +39,10 @@ interface AppState {
   approveTask: (taskId: string) => Promise<void>;
   updateRoomStatus: (roomId: string, status: RoomStatus) => Promise<void>;
   
+  // Lavanderia (PERSISTENTE)
+  addLaundry: (item: Omit<LaundryItem, 'id' | 'lastUpdated'>) => Promise<void>;
+  moveLaundry: (itemId: string, stage: LaundryStage) => Promise<void>;
+  
   // Estoque
   addInventory: (item: Omit<InventoryItem, 'id'>) => Promise<void>;
   updateInventory: (id: string, qty: number) => Promise<void>;
@@ -82,14 +86,15 @@ export const useStore = create<AppState>()(
       syncData: async () => {
         if (!supabase) return;
         try {
-          const [uRes, rRes, tRes, iRes, gRes, aRes, trRes] = await Promise.all([
+          const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
             supabase.from('tasks').select('*').not('status', 'eq', 'aprovado'),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
             supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
-            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(20)
+            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(20),
+            supabase.from('laundry').select('*').order('last_updated', { ascending: false })
           ]);
 
           if (uRes.data) {
@@ -101,6 +106,13 @@ export const useStore = create<AppState>()(
               id: r.id, number: r.number, floor: r.floor, status: r.status as RoomStatus,
               category: r.category as RoomCategory, type: (r.type || 'standard') as RoomType,
               maxGuests: r.max_guests || 2, bedsCount: r.beds_count || 1, hasMinibar: !!r.has_minibar, hasBalcony: !!r.has_balcony
+            })) });
+          }
+
+          if (lRes.data) {
+            set({ laundry: lRes.data.map(l => ({
+              id: l.id, type: l.type, quantity: l.quantity, stage: l.stage as LaundryStage,
+              roomOrigin: l.room_origin, lastUpdated: l.last_updated
             })) });
           }
 
@@ -162,11 +174,30 @@ export const useStore = create<AppState>()(
         return false;
       },
 
+      addLaundry: async (item) => {
+        if (!supabase) return;
+        const id = `l-${Date.now()}`;
+        const lastUpdated = new Date().toISOString();
+        const { error } = await supabase.from('laundry').insert({
+          id, type: item.type, quantity: item.quantity, stage: item.stage,
+          room_origin: item.roomOrigin, last_updated: lastUpdated
+        });
+        if (!error) await get().syncData();
+      },
+
+      moveLaundry: async (itemId, stage) => {
+        if (!supabase) return;
+        const { error } = await supabase.from('laundry').update({ 
+          stage, 
+          last_updated: new Date().toISOString() 
+        }).eq('id', itemId);
+        if (!error) await get().syncData();
+      },
+
       createTask: async (data) => {
         if (!supabase) return;
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
-        const staff = get().users.find(u => u.id === data.assignedTo);
         const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
         
         await supabase.from('tasks').insert({
@@ -184,7 +215,7 @@ export const useStore = create<AppState>()(
         await supabase.from('tasks').update({
           status: updates.status, checklist: updates.checklist, photos: updates.photos,
           started_at: updates.startedAt, completed_at: updates.completedAt,
-          duration_minutes: updates.durationMinutes, fator_mamae_verified: updates.fatorMamaeVerified
+          duration_minutes: updates.durationMinutes, fator_mamae_verified: updates.fator_mamae_verified
         }).eq('id', taskId);
         await get().syncData();
       },
@@ -209,7 +240,7 @@ export const useStore = create<AppState>()(
         const id = `i-${Date.now()}`;
         await supabase.from('inventory').insert({
           id, name: item.name, category: item.category, quantity: item.quantity,
-          min_stock: item.minStock, price: item.price, unit_cost: item.unitCost
+          min_stock: item.minStock, unit_cost: item.unitCost
         });
         await get().syncData();
       },

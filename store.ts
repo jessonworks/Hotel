@@ -39,6 +39,9 @@ interface AppState {
   updateCurrentUser: (updates: Partial<User>) => void;
   updateUserPassword: (userId: string, newPass: string) => Promise<void>;
   
+  // Storage & Photos
+  uploadPhoto: (file: Blob, path: string) => Promise<string | null>;
+  
   createTask: (data: Partial<CleaningTask>) => Promise<void>;
   updateTask: (taskId: string, updates: Partial<CleaningTask>) => Promise<void>;
   approveTask: (taskId: string) => Promise<void>;
@@ -104,7 +107,6 @@ export const useStore = create<AppState>()(
       syncData: async () => {
         if (!supabase) return;
         try {
-          // Mantém o loading se for a primeira vez
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
@@ -194,6 +196,25 @@ export const useStore = create<AppState>()(
         if (!supabase) return;
         await supabase.from('users').update({ password: newPass }).eq('id', userId);
         await get().syncData();
+      },
+
+      uploadPhoto: async (file, path) => {
+        if (!supabase) return null;
+        try {
+          const { data, error } = await supabase.storage
+            .from('cleaning-photos')
+            .upload(path, file, { 
+              upsert: true,
+              contentType: 'image/jpeg' 
+            });
+
+          if (error) throw error;
+          const { data: { publicUrl } } = supabase.storage.from('cleaning-photos').getPublicUrl(data.path);
+          return publicUrl;
+        } catch (e) {
+          console.error("Upload Error:", e);
+          return null;
+        }
       },
 
       updateTask: async (taskId, updates) => {

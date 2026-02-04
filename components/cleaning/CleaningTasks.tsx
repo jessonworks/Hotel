@@ -3,12 +3,12 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { useStore } from '../../store';
 import { CleaningStatus, UserRole, RoomStatus } from '../../types';
 import { 
-  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, LayoutDashboard, MessageSquareText, Loader2, Eye, Check, AlertCircle
+  Camera, X, Bed, Timer, Play, Clock, ShieldCheck, ClipboardCheck, ArrowRight, CheckCircle2, LayoutDashboard, MessageSquareText, Loader2, Eye, Check, AlertCircle, CloudUpload
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
-// Função de compressão de imagem extremamente rápida e eficiente
-const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Promise<string> => {
+// Função de compressão de imagem extremamente rápida e eficiente (Retorna Blob para o Storage)
+const compressImageToBlob = (base64Str: string, maxWidth = 1000, maxHeight = 800): Promise<Blob> => {
   return new Promise((resolve) => {
     const img = new Image();
     img.src = base64Str;
@@ -33,13 +33,15 @@ const compressImage = (base64Str: string, maxWidth = 800, maxHeight = 600): Prom
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx?.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.6)); // Qualidade 60% para equilíbrio perfeito
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+      }, 'image/jpeg', 0.6); // 60% qualidade é o "sweet spot" para mobile
     };
   });
 };
 
 const CleaningTasks: React.FC = () => {
-  const { tasks, rooms, updateTask, approveTask, currentUser, users } = useStore();
+  const { tasks, rooms, updateTask, approveTask, uploadPhoto, currentUser, users } = useStore();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
   const [auditTaskId, setAuditTaskId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -47,6 +49,7 @@ const CleaningTasks: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
 
+  // Armazena as URLs das fotos que já estão no Storage
   const [draftPhotos, setDraftPhotos] = useState<Record<string, {url: string, uploading: boolean}>>({});
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
@@ -114,28 +117,42 @@ const CleaningTasks: React.FC = () => {
       const categoryId = capturingFor.id;
       const categoryLabel = capturingFor.category;
 
-      setDraftPhotos(prev => ({ ...prev, [categoryId]: { ...((prev[categoryId] || {}) as any), uploading: true } }));
+      // Inicia estado de upload visual
+      setDraftPhotos(prev => ({ 
+        ...prev, 
+        [categoryId]: { url: '', uploading: true } 
+      }));
 
       const reader = new FileReader();
       reader.onloadend = async () => {
         const rawBase64 = reader.result as string;
         
-        // COMPRESSÃO EM TEMPO DE EXECUÇÃO
-        const compressedBase64 = await compressImage(rawBase64);
+        // 1. Comprime para Blob
+        const compressedBlob = await compressImageToBlob(rawBase64);
         
-        setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: compressedBase64, uploading: false } }));
+        // 2. Upload para o Supabase Storage
+        const fileName = `${activeTask.id}/${categoryId}_${Date.now()}.jpg`;
+        const publicUrl = await uploadPhoto(compressedBlob, fileName);
+        
+        if (publicUrl) {
+          setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: publicUrl, uploading: false } }));
 
-        const currentPhotos = (activeTask.photos || []) as any[];
-        const otherPhotos = currentPhotos.filter((p: any) => p.type !== categoryId);
-        const newPhoto = { type: categoryId, url: compressedBase64, category: categoryLabel };
-        
-        const updates: any = { photos: [...otherPhotos, newPhoto] };
-        if (categoryLabel === 'START') {
-          updates.status = CleaningStatus.EM_PROGRESSO;
-          updates.startedAt = new Date().toISOString();
+          const currentPhotos = (activeTask.photos || []) as any[];
+          const otherPhotos = currentPhotos.filter((p: any) => p.type !== categoryId);
+          const newPhoto = { type: categoryId, url: publicUrl, category: categoryLabel };
+          
+          const updates: any = { photos: [...otherPhotos, newPhoto] };
+          if (categoryLabel === 'START') {
+            updates.status = CleaningStatus.EM_PROGRESSO;
+            updates.startedAt = new Date().toISOString();
+          }
+          
+          await updateTask(activeTask.id, updates);
+        } else {
+          // Tratar erro de upload
+          setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: '', uploading: false } }));
+          alert("Erro ao enviar foto para nuvem. Verifique sua conexão.");
         }
-        
-        await updateTask(activeTask.id, updates);
         setCapturingFor(null);
       };
       reader.readAsDataURL(file);
@@ -154,11 +171,14 @@ const CleaningTasks: React.FC = () => {
     try {
       const finalDuration = Math.max(1, Math.floor(elapsed / 60));
       
-      const finalPhotos = Object.entries(draftPhotos).map(([type, data]: [string, any]) => ({
-        type,
-        url: data.url,
-        category: 'MAMAE' as const
-      }));
+      // Fix: Added explicit type cast to resolve property 'url' does not exist on type 'unknown' error.
+      const finalPhotos = Object.entries(draftPhotos)
+        .filter(([_, data]) => (data as any).url)
+        .map(([type, data]: [string, any]) => ({
+          type,
+          url: data.url,
+          category: 'MAMAE' as const
+        }));
 
       await updateTask(activeTask.id, { 
         status: CleaningStatus.AGUARDANDO_APROVACAO,
@@ -193,9 +213,11 @@ const CleaningTasks: React.FC = () => {
   };
 
   const allChecksDone = activeTask ? Object.values(activeTask.checklist).every(v => v) : false;
+  // Fix: Added explicit type cast to resolve property 'uploading' does not exist on type 'unknown' error.
+  const anyUploading = Object.values(draftPhotos).some((p: any) => p.uploading);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-4 md:space-y-8 pb-32 px-2 animate-in fade-in duration-500">
+    <div className="max-w-4xl mx-auto space-y-4 md:space-y-8 pb-32 px-2 animate-in fade-in duration-700">
       <input type="file" ref={fileInputRef} onChange={onFileChange} accept="image/*" className="hidden" capture="environment" />
       
       {!activeTask ? (
@@ -341,7 +363,7 @@ const CleaningTasks: React.FC = () => {
           </div>
 
           {/* ÁREA DE CONTEÚDO SCROLLÁVEL */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-6 custom-scrollbar overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-6 custom-scrollbar overscroll-contain">
             <section className="space-y-3">
               <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest px-1">
                 <ClipboardCheck size={20} className="text-blue-600" /> Checklist Obrigatório
@@ -363,17 +385,21 @@ const CleaningTasks: React.FC = () => {
 
             <section className="space-y-3">
               <h3 className="font-black text-sm flex items-center gap-2 text-amber-600 uppercase tracking-widest px-1">
-                <ShieldCheck size={20} /> Fator Mamãe (Fotos)
+                <ShieldCheck size={20} /> Fator Mamãe (Fotos na Nuvem)
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const draft = draftPhotos[req.id];
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner hover:border-blue-300 transition-colors active:scale-95">
+                    <button 
+                      key={req.id} 
+                      onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} 
+                      className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner hover:border-blue-300 transition-colors active:scale-95"
+                    >
                       {draft?.uploading ? (
-                        <div className="flex flex-col items-center gap-2 animate-pulse">
-                          <Loader2 className="animate-spin text-blue-600" size={24} />
-                          <span className="text-[7px] font-black text-blue-600 uppercase">Otimizando...</span>
+                        <div className="flex flex-col items-center gap-2 animate-pulse bg-blue-50 w-full h-full justify-center">
+                          <CloudUpload className="animate-bounce text-blue-600" size={24} />
+                          <span className="text-[7px] font-black text-blue-600 uppercase tracking-widest">Enviando...</span>
                         </div>
                       ) : draft?.url ? (
                         <img src={draft.url} className="w-full h-full object-cover" />
@@ -393,11 +419,11 @@ const CleaningTasks: React.FC = () => {
           {/* FOOTER FIXO E SEMPRE VISÍVEL */}
           <div className="shrink-0 p-4 bg-white border-t border-slate-100 shadow-[0_-10px_30px_rgba(0,0,0,0.1)] pb-safe">
             <button 
-              disabled={isProcessing || !allChecksDone} 
+              disabled={isProcessing || !allChecksDone || anyUploading} 
               onClick={handleComplete} 
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 ${allChecksDone && !isProcessing ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 ${allChecksDone && !isProcessing && !anyUploading ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
             >
-              {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR TAREFA <ArrowRight size={20} /></>}
+              {isProcessing ? <Loader2 className="animate-spin" /> : anyUploading ? 'AGUARDANDO UPLOADS...' : <>FINALIZAR TAREFA <ArrowRight size={20} /></>}
             </button>
           </div>
         </div>
@@ -434,7 +460,7 @@ const CleaningTasks: React.FC = () => {
                       <div key={idx} className="space-y-2">
                         <p className="text-[10px] font-black text-slate-500 uppercase">FOTO {idx + 1}</p>
                         <div className="aspect-video bg-slate-100 rounded-2xl overflow-hidden border-2 border-slate-200">
-                           <img src={photo.url} className="w-full h-full object-cover" />
+                           <img src={photo.url} className="w-full h-full object-cover" loading="lazy" />
                         </div>
                       </div>
                   ))}

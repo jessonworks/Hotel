@@ -2,10 +2,10 @@
 import React, { useState } from 'react';
 import { useStore } from '../../store';
 import { LaundryStage } from '../../types';
-import { Trash2, Plus, ChevronRight, Droplets, Wind, Warehouse, X } from 'lucide-react';
+import { Trash2, Plus, ChevronRight, Droplets, Wind, Warehouse, X, AlertCircle } from 'lucide-react';
 
 const LaundryKanban: React.FC = () => {
-  const { laundry, moveLaundry, addLaundry } = useStore();
+  const { laundry = [], moveLaundry, addLaundry, isSupabaseConnected } = useStore();
   const [showAdd, setShowAdd] = useState(false);
   const [newItem, setNewItem] = useState({ type: 'Lençol', quantity: 1, stage: LaundryStage.SUJO, roomOrigin: '' });
 
@@ -22,6 +22,9 @@ const LaundryKanban: React.FC = () => {
     setShowAdd(false);
   };
 
+  // Se o laundry não for um array por algum motivo de erro de sincronização
+  const safeLaundry = Array.isArray(laundry) ? laundry : [];
+
   return (
     <div className="space-y-4 h-full flex flex-col pb-20 md:pb-12">
       <div className="flex justify-between items-center px-2">
@@ -37,6 +40,13 @@ const LaundryKanban: React.FC = () => {
         </button>
       </div>
 
+      {!isSupabaseConnected && (
+        <div className="mx-2 p-4 bg-amber-50 border border-amber-100 rounded-2xl flex items-center gap-3 text-amber-700 text-xs font-bold animate-pulse">
+          <AlertCircle size={18} />
+          <span>Atenção: Verifique se a tabela 'laundry' foi criada no seu Banco de Dados Supabase.</span>
+        </div>
+      )}
+
       <div className="flex-1 flex gap-4 overflow-x-auto px-2 pb-6 snap-x snap-mandatory no-scrollbar custom-scrollbar">
         {stages.map(stage => (
           <div key={stage.id} className="flex flex-col h-full min-w-[280px] w-[85vw] md:w-[280px] md:min-w-0 bg-slate-50/50 rounded-3xl border border-slate-200 p-3 snap-center">
@@ -44,12 +54,12 @@ const LaundryKanban: React.FC = () => {
               {stage.icon}
               {stage.label}
               <span className="ml-auto bg-white/50 px-2 py-0.5 rounded-lg">
-                {laundry.filter(l => l.stage === stage.id).length}
+                {safeLaundry.filter(l => l.stage === stage.id).length}
               </span>
             </div>
 
             <div className="flex-1 space-y-3 overflow-y-auto pr-1 custom-scrollbar">
-              {laundry.filter(l => l.stage === stage.id).map(item => (
+              {safeLaundry.filter(l => l.stage === stage.id).map(item => (
                 <div key={item.id} className="bg-white p-4 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-all flex justify-between items-center group">
                   <div className="min-w-0">
                     <h4 className="font-black text-slate-800 text-sm truncate">{item.type}</h4>
@@ -63,7 +73,7 @@ const LaundryKanban: React.FC = () => {
                   )}
                 </div>
               ))}
-              {laundry.filter(l => l.stage === stage.id).length === 0 && (
+              {safeLaundry.filter(l => l.stage === stage.id).length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-200">
                   <stage.icon size={32} />
                   <p className="text-[10px] font-black uppercase mt-2">Vazio</p>

@@ -12,7 +12,8 @@ import {
   Wind,
   CheckCircle2,
   History,
-  Award
+  Award,
+  Users as UsersIcon
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -25,18 +26,28 @@ import {
 import { RoomStatus, UserRole, CleaningStatus, LaundryStage } from '../../types';
 
 const Dashboard: React.FC = () => {
-  const { rooms, tasks, currentUser, announcements, addAnnouncement, transactions, laundry } = useStore();
+  const { rooms, tasks, currentUser, users, announcements, addAnnouncement, transactions, laundry } = useStore();
   const [newMsg, setNewMsg] = useState('');
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
 
-  // Métricas do Staff Otimizadas
+  // Filtro de tarefas concluídas hoje
   const today = new Date().toISOString().split('T')[0];
-  const cleanedToday = tasks.filter(t => 
+  
+  // Se for admin/gerente, vê de todos. Se for staff, vê as suas.
+  const relevantHistory = tasks.filter(t => {
+    const isToday = t.completedAt?.startsWith(today);
+    const isDone = t.status === CleaningStatus.APROVADO || t.status === CleaningStatus.AGUARDANDO_APROVACAO;
+    if (!isToday || !isDone) return false;
+    
+    return isAdminOrManager ? true : t.assignedTo === currentUser?.id;
+  });
+
+  const myCleanedToday = tasks.filter(t => 
     t.assignedTo === currentUser?.id && 
     (t.status === CleaningStatus.APROVADO || t.status === CleaningStatus.AGUARDANDO_APROVACAO) &&
     (t.completedAt?.startsWith(today))
-  );
+  ).length;
 
   const pendingTasksCount = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.PENDENTE).length;
   const inProgressTasks = tasks.filter(t => t.assignedTo === currentUser?.id && t.status === CleaningStatus.EM_PROGRESSO).length;
@@ -52,7 +63,7 @@ const Dashboard: React.FC = () => {
     { label: 'Lucro', value: `R$ ${realProfit >= 1000 ? (realProfit/1000).toFixed(1) + 'k' : realProfit.toFixed(0)}`, icon: <TrendingUp size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
     { label: 'Avisos', value: announcements.length, icon: <AlertCircle size={20}/>, color: 'bg-rose-600', shadow: 'shadow-rose-500/20' },
   ] : [
-    { label: 'Limpas Hoje', value: cleanedToday.length, icon: <Award size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
+    { label: 'Limpas Hoje', value: myCleanedToday, icon: <Award size={20}/>, color: 'bg-emerald-600', shadow: 'shadow-emerald-500/20' },
     { label: 'A Fazer', value: pendingTasksCount, icon: <Brush size={20}/>, color: 'bg-rose-600', shadow: 'shadow-rose-500/20' },
     { label: 'Em Curso', value: inProgressTasks, icon: <Clock size={20}/>, color: 'bg-blue-600', shadow: 'shadow-blue-500/20' },
     { label: 'Enxoval Ok', value: laundry.filter(l => l.stage === LaundryStage.GUARDADO).reduce((acc, l) => acc + l.quantity, 0), icon: <Wind size={20}/>, color: 'bg-blue-900', shadow: 'shadow-blue-500/20' },
@@ -87,47 +98,49 @@ const Dashboard: React.FC = () => {
         ))}
       </div>
 
-      {!isAdminOrManager && (
-        <section className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
-           <div className="flex items-center justify-between mb-4 px-1">
-              <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
-                <History size={18} className="text-blue-600" /> Histórico de Hoje
-              </h3>
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('pt-BR')}</span>
-           </div>
-           <div className="space-y-3">
-              {cleanedToday.length > 0 ? cleanedToday.map(task => {
-                const room = rooms.find(r => r.id === task.roomId);
-                const isApproved = task.status === CleaningStatus.APROVADO;
-                return (
-                  <div key={task.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 ${isApproved ? 'bg-emerald-600 text-white' : 'bg-white text-blue-600'} rounded-xl flex items-center justify-center font-black border border-slate-200 shadow-sm`}>
-                        {room?.number}
-                      </div>
-                      <div>
-                        <p className="text-xs font-black text-slate-800">Unidade Concluída</p>
-                        <p className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${isApproved ? 'text-emerald-600' : 'text-amber-500'}`}>
-                          {isApproved ? <CheckCircle2 size={10} /> : <Clock size={10} />}
-                          {isApproved ? 'Aprovado pelo Gerente' : 'Aguardando Auditoria'}
-                        </p>
-                      </div>
+      <section className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">
+         <div className="flex items-center justify-between mb-4 px-1">
+            <h3 className="font-black text-sm text-slate-900 flex items-center gap-2">
+              <History size={18} className="text-blue-600" /> 
+              {isAdminOrManager ? 'Produtividade da Equipe (Hoje)' : 'Meu Histórico de Hoje'}
+            </h3>
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('pt-BR')}</span>
+         </div>
+         <div className="space-y-3">
+            {relevantHistory.length > 0 ? relevantHistory.map(task => {
+              const room = rooms.find(r => r.id === task.roomId);
+              const staff = users.find(u => u.id === task.assignedTo);
+              const isApproved = task.status === CleaningStatus.APROVADO;
+              return (
+                <div key={task.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 ${isApproved ? 'bg-emerald-600 text-white' : 'bg-white text-blue-600'} rounded-xl flex items-center justify-center font-black border border-slate-200 shadow-sm shrink-0`}>
+                      {room?.number}
                     </div>
-                    <div className="text-right">
-                       <p className="text-[10px] font-black text-slate-900">{task.durationMinutes} min</p>
-                       <p className="text-[8px] font-bold text-slate-400">{new Date(task.completedAt!).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                    <div>
+                      <p className="text-xs font-black text-slate-800">
+                        {isAdminOrManager ? staff?.fullName : 'Unidade Concluída'}
+                      </p>
+                      <p className={`text-[8px] font-black uppercase tracking-widest flex items-center gap-1 ${isApproved ? 'text-emerald-600' : 'text-amber-500'}`}>
+                        {isApproved ? <CheckCircle2 size={10} /> : <Clock size={10} />}
+                        {isApproved ? 'Aprovado' : 'Auditando'}
+                      </p>
                     </div>
                   </div>
-                );
-              }) : (
-                <div className="text-center py-10 bg-slate-50/50 rounded-[1.5rem] border border-dashed border-slate-200">
-                  <Brush size={32} className="text-slate-200 mx-auto mb-2" />
-                  <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Nenhuma limpeza enviada ainda hoje.</p>
+                  <div className="text-right">
+                     <p className="text-[10px] font-black text-slate-900">{task.durationMinutes} min</p>
+                     <p className="text-[8px] font-bold text-slate-400">{new Date(task.completedAt!).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</p>
+                  </div>
                 </div>
-              )}
-           </div>
-        </section>
-      )}
+              );
+            }) : (
+              <div className="text-center py-10 bg-slate-50/50 rounded-[1.5rem] border border-dashed border-slate-200">
+                <Brush size={32} className="text-slate-200 mx-auto mb-2" />
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Nenhuma tarefa finalizada hoje.</p>
+              </div>
+            )}
+         </div>
+      </section>
 
       {isAdminOrManager && (
         <div className="bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm">

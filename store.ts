@@ -110,7 +110,7 @@ export const useStore = create<AppState>()(
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
-            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
+            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(150),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
             supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
@@ -199,20 +199,30 @@ export const useStore = create<AppState>()(
       },
 
       uploadPhoto: async (file, path) => {
-        if (!supabase) return null;
+        if (!supabase) {
+          console.error("Supabase client not initialized");
+          return null;
+        }
         try {
+          console.log("Iniciando upload para:", path);
           const { data, error } = await supabase.storage
             .from('cleaning-photos')
             .upload(path, file, { 
               upsert: true,
-              contentType: 'image/jpeg' 
+              contentType: 'image/jpeg',
+              cacheControl: '3600'
             });
 
-          if (error) throw error;
+          if (error) {
+            console.error("Erro no Storage do Supabase:", error.message, error);
+            return null;
+          }
+          
           const { data: { publicUrl } } = supabase.storage.from('cleaning-photos').getPublicUrl(data.path);
+          console.log("Upload concluído com sucesso:", publicUrl);
           return publicUrl;
         } catch (e) {
-          console.error("Upload Error:", e);
+          console.error("Exceção durante upload:", e);
           return null;
         }
       },
@@ -235,7 +245,7 @@ export const useStore = create<AppState>()(
 
         const { error } = await supabase.from('tasks').update(dbFields).eq('id', taskId);
         if (error) {
-           console.error("Supabase Error:", error);
+           console.error("Supabase Error ao atualizar tarefa:", error);
            await get().syncData(); 
         }
       },

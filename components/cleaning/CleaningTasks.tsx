@@ -16,6 +16,9 @@ const CleaningTasks: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
 
+  // Estado local para fotos para evitar perda durante uploads rápidos
+  const [localPhotos, setLocalPhotos] = useState<any[]>([]);
+
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
   const myTasks = tasks.filter(t => 
@@ -32,6 +35,12 @@ const CleaningTasks: React.FC = () => {
   const activeTask = tasks.find(t => t.id === activeTaskId);
   const auditTask = tasks.find(t => t.id === auditTaskId);
   const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
+
+  useEffect(() => {
+    if (activeTask) {
+      setLocalPhotos(activeTask.photos || []);
+    }
+  }, [activeTaskId]);
 
   useEffect(() => {
     let interval: any;
@@ -58,22 +67,26 @@ const CleaningTasks: React.FC = () => {
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0] && activeTask && capturingFor) {
+      setIsProcessing(true);
       const file = e.target.files[0];
       const reader = new FileReader();
       reader.onloadend = async () => {
-        // Importante: Pegar a lista mais atual de fotos para não sobrescrever
-        const currentPhotos = activeTask.photos || [];
-        // Filtra fotos da mesma categoria para substituir se necessário, ou apenas adiciona
-        const otherPhotos = currentPhotos.filter(p => p.type !== capturingFor.id);
-        const newPhoto = { type: capturingFor.id, url: reader.result as string, category: capturingFor.category };
+        const base64 = reader.result as string;
         
-        const updates: any = { photos: [...otherPhotos, newPhoto] };
+        // Atualiza localmente primeiro para UX instantânea
+        const newPhoto = { type: capturingFor.id, url: base64, category: capturingFor.category };
+        const updatedPhotos = [...localPhotos.filter(p => p.type !== capturingFor.id), newPhoto];
+        setLocalPhotos(updatedPhotos);
+
+        const updates: any = { photos: updatedPhotos };
         if (capturingFor.category === 'START') {
           updates.status = CleaningStatus.EM_PROGRESSO;
           updates.startedAt = new Date().toISOString();
         }
+        
         await updateTask(activeTask.id, updates);
         setCapturingFor(null);
+        setIsProcessing(false);
       };
       reader.readAsDataURL(file);
     }
@@ -93,7 +106,8 @@ const CleaningTasks: React.FC = () => {
       status: CleaningStatus.AGUARDANDO_APROVACAO,
       completedAt: new Date().toISOString(),
       durationMinutes: finalDuration,
-      fatorMamaeVerified: true
+      fatorMamaeVerified: true,
+      photos: localPhotos // Garante que as fotos locais finais sejam enviadas
     });
     
     const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number}\nEquipe: ${currentUser?.fullName}\nTempo: ${formatTime(elapsed)}\nStatus: Conferência Pendente ✅`;
@@ -241,7 +255,7 @@ const CleaningTasks: React.FC = () => {
           )}
         </div>
       ) : (
-        <div className="bg-white fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-10">
+        <div className="bg-white fixed inset-0 z-[100] flex flex-col animate-in slide-in-from-bottom-10 overscroll-none touch-none">
           <div className="bg-slate-900 p-6 pt-10 text-white shrink-0">
             <div className="flex justify-between items-center mb-4">
               <div>
@@ -256,7 +270,7 @@ const CleaningTasks: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-32 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 space-y-6 pb-40 custom-scrollbar overscroll-contain touch-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
             <section className="space-y-3">
               <h3 className="font-black text-sm flex items-center gap-2 text-slate-900 uppercase tracking-widest">
                 <ClipboardCheck size={20} className="text-blue-600" /> Checklist Obrigatório
@@ -277,7 +291,7 @@ const CleaningTasks: React.FC = () => {
               </h3>
               <div className="grid grid-cols-2 gap-3">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
-                  const photo = activeTask.photos?.find(p => p.type === req.id);
+                  const photo = localPhotos.find(p => p.type === req.id);
                   return (
                     <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
                       {photo ? <img src={photo.url} className="w-full h-full object-cover" /> : 
@@ -289,11 +303,11 @@ const CleaningTasks: React.FC = () => {
             </section>
           </div>
 
-          <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0">
+          <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 z-[110]">
             <button 
               disabled={isProcessing || !Object.values(activeTask.checklist).every(v => v)} 
               onClick={handleComplete} 
-              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg shadow-xl transition-all flex items-center justify-center gap-3 uppercase tracking-widest ${Object.values(activeTask.checklist).every(v => v) ? 'bg-emerald-600 text-white active:scale-95' : 'bg-slate-100 text-slate-300'}`}
             >
               {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR E NOTIFICAR <ArrowRight size={20} /></>}
             </button>
@@ -303,7 +317,7 @@ const CleaningTasks: React.FC = () => {
 
       {/* MODAL DE AUDITORIA DO GERENTE */}
       {auditTaskId && auditTask && (
-        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300">
+        <div className="fixed inset-0 z-[150] bg-white flex flex-col animate-in slide-in-from-bottom-20 duration-300 overscroll-none touch-none">
            <div className="bg-slate-900 p-6 pt-12 text-white flex justify-between items-center shrink-0">
               <div>
                 <h2 className="text-3xl font-black">AUDITORIA Q.{rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
@@ -312,7 +326,7 @@ const CleaningTasks: React.FC = () => {
               <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full"><X size={24}/></button>
            </div>
            
-           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-32">
+           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-32 overscroll-contain touch-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
               <section className="space-y-4">
                 <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b pb-2">Conferência de Checklist</h3>
                 <div className="grid gap-2">
@@ -343,11 +357,11 @@ const CleaningTasks: React.FC = () => {
               </section>
            </div>
 
-           <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 flex gap-3">
+           <div className="p-4 bg-white border-t border-slate-100 absolute bottom-0 left-0 right-0 flex gap-3 z-[110]">
               <button 
                 disabled={isProcessing}
                 onClick={() => handleApprove(auditTask.id)}
-                className="flex-1 py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2 uppercase text-sm tracking-widest"
+                className="flex-1 py-5 bg-emerald-600 text-white font-black rounded-2xl shadow-xl flex items-center justify-center gap-2 uppercase text-sm tracking-widest active:scale-95"
               >
                 {isProcessing ? <Loader2 className="animate-spin" /> : <><Check size={20} /> APROVAR LIMPEZA</>}
               </button>

@@ -89,7 +89,8 @@ export const useStore = create<AppState>()(
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
-            supabase.from('tasks').select('*').not('status', 'eq', 'aprovado'),
+            // Alterado: Agora buscamos todas as tarefas recentes, inclusive as aprovadas para histórico
+            supabase.from('tasks').select('*').order('completed_at', { ascending: false }).limit(100),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
             supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
@@ -263,9 +264,9 @@ export const useStore = create<AppState>()(
         if (!supabase) return;
         const id = `g-${Date.now()}`;
         await supabase.from('guests').insert({
-          id, full_name: data.fullName, document: data.document, check_in: data.checkIn,
-          check_out: data.checkOut, room_id: data.roomId, daily_rate: data.dailyRate,
-          total_value: data.totalValue, payment_method: data.paymentMethod
+          id, full_name: data.fullName, document: data.document, check_in: data.check_in,
+          check_out: data.check_out, room_id: data.roomId, daily_rate: data.daily_rate,
+          total_value: data.total_value, payment_method: data.payment_method
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
         await get().syncData();

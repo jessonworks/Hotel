@@ -16,7 +16,6 @@ const CleaningTasks: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
 
-  // Estado de rascunho para fotos
   const [draftPhotos, setDraftPhotos] = useState<Record<string, {url: string, uploading: boolean}>>({});
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
@@ -48,21 +47,20 @@ const CleaningTasks: React.FC = () => {
     } else {
       setDraftPhotos({});
     }
-  }, [activeTaskId]);
+  }, [activeTaskId, activeTask]);
 
-  // TIMER OTIMIZADO: Calcula o tempo decorrido baseado no momento atual vs momento de início
-  // Isso evita que o timer trave mesmo se o JS estiver ocupado com outras tarefas
+  // TIMER ESTÁVEL: Baseado no tempo de início real para evitar travamentos
   useEffect(() => {
     let interval: any;
     if (activeTask?.status === CleaningStatus.EM_PROGRESSO && activeTask.startedAt) {
       const startTime = new Date(activeTask.startedAt).getTime();
-      
-      const updateElapsed = () => {
-        setElapsed(Math.max(0, Math.floor((Date.now() - startTime) / 1000)));
+      const update = () => {
+        const now = Date.now();
+        const diff = Math.max(0, Math.floor((now - startTime) / 1000));
+        setElapsed(diff);
       };
-
-      updateElapsed(); // Atualiza imediatamente
-      interval = setInterval(updateElapsed, 1000);
+      update();
+      interval = setInterval(update, 1000);
     } else {
       setElapsed(0);
     }
@@ -78,7 +76,7 @@ const CleaningTasks: React.FC = () => {
   const handleStartPhoto = (taskId: string) => {
     setCapturingFor({ id: 'start_audit', category: 'START' });
     setActiveTaskId(taskId);
-    setTimeout(() => fileInputRef.current?.click(), 150);
+    setTimeout(() => fileInputRef.current?.click(), 100);
   };
 
   const onFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -114,7 +112,7 @@ const CleaningTasks: React.FC = () => {
   const handleToggleCheck = async (item: string) => {
     if (!activeTask) return;
     const newChecklist = { ...activeTask.checklist, [item]: !activeTask.checklist[item] };
-    // Chamada instantânea graças à atualização otimista na store
+    // Chamada otimista na store
     await updateTask(activeTask.id, { checklist: newChecklist });
   };
 
@@ -304,9 +302,14 @@ const CleaningTasks: React.FC = () => {
               </h3>
               <div className="grid gap-2">
                 {Object.keys(activeTask.checklist).map(item => (
-                  <label key={item} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-100'}`}>
-                    <input type="checkbox" checked={activeTask.checklist[item]} onChange={() => handleToggleCheck(item)} className="w-5 h-5 rounded text-emerald-600" />
-                    <span className={`font-bold text-xs leading-tight ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
+                  <label key={item} className={`flex items-center gap-4 p-4 rounded-xl border-2 transition-all cursor-pointer select-none active:scale-[0.98] ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-400' : 'bg-slate-50 border-slate-100'}`}>
+                    <input 
+                      type="checkbox" 
+                      checked={activeTask.checklist[item]} 
+                      onChange={() => handleToggleCheck(item)} 
+                      className="w-5 h-5 rounded text-emerald-600 border-slate-300 focus:ring-0" 
+                    />
+                    <span className={`font-bold text-xs leading-tight transition-colors ${activeTask.checklist[item] ? 'text-emerald-900' : 'text-slate-500'}`}>{item}</span>
                   </label>
                 ))}
               </div>
@@ -320,7 +323,7 @@ const CleaningTasks: React.FC = () => {
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
                   const draft = draftPhotos[req.id];
                   return (
-                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner">
+                    <button key={req.id} onClick={() => { setCapturingFor({ id: req.id, category: 'MAMAE' }); fileInputRef.current?.click(); }} className="aspect-video bg-slate-50 border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative shadow-inner hover:border-blue-300 transition-colors">
                       {draft?.uploading ? (
                         <div className="flex flex-col items-center gap-2 animate-pulse">
                           <Loader2 className="animate-spin text-blue-600" size={24} />
@@ -361,7 +364,7 @@ const CleaningTasks: React.FC = () => {
                 <h2 className="text-3xl font-black">AUDITORIA Q.{rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
                 <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em]">{users.find(u => u.id === auditTask.assignedTo)?.fullName}</p>
               </div>
-              <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full"><X size={24}/></button>
+              <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><X size={24}/></button>
            </div>
            
            <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-36 overscroll-contain" style={{ WebkitOverflowScrolling: 'touch' }}>
@@ -405,7 +408,7 @@ const CleaningTasks: React.FC = () => {
               </button>
               <button 
                 onClick={() => setAuditTaskId(null)}
-                className="px-6 py-5 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]"
+                className="px-6 py-5 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] active:scale-95"
               >
                 VOLTAR
               </button>

@@ -89,7 +89,9 @@ export const useStore = create<AppState>()(
           const [uRes, rRes, tRes, iRes, gRes, aRes, trRes, lRes] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*'),
-            supabase.from('tasks').select('*').order('completed_at', { ascending: false }).limit(100),
+            // CORREÇÃO CRÍTICA: Ordenar por 'id' descendente para que as tarefas novas (IDs maiores) 
+            // apareçam primeiro. O uso de 'completed_at' ocultava tarefas novas pois nulas ficavam no fim da lista.
+            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
             supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
@@ -118,7 +120,7 @@ export const useStore = create<AppState>()(
 
           if (tRes.data) {
             set({ tasks: tRes.data.map(t => ({
-              id: t.id, roomId: t.room_id, assigned_to: t.assigned_to, assignedByName: t.assigned_by_name,
+              id: t.id, roomId: t.room_id, assignedTo: t.assigned_to, assignedByName: t.assigned_by_name,
               status: t.status as CleaningStatus, startedAt: t.started_at, completedAt: t.completed_at,
               durationMinutes: t.duration_minutes, deadline: t.deadline, notes: t.notes,
               checklist: t.checklist || {}, photos: t.photos || [], fatorMamaeVerified: !!t.fator_mamae_verified,
@@ -211,33 +213,28 @@ export const useStore = create<AppState>()(
       },
 
       updateTask: async (taskId, updates) => {
-        // ATUALIZAÇÃO OTIMISTA: Atualiza o estado local imediatamente para eliminar o lag
-        const currentTasks = get().tasks;
-        const taskIndex = currentTasks.findIndex(t => t.id === taskId);
-        
-        if (taskIndex !== -1) {
-          const updatedTasks = [...currentTasks];
-          updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], ...updates };
-          set({ tasks: updatedTasks });
-        }
+        // ATUALIZAÇÃO OTIMISTA: Refletir na UI imediatamente
+        const prevTasks = get().tasks;
+        const updatedTasks = prevTasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+        set({ tasks: updatedTasks });
 
         if (!supabase) return;
         
-        // Formata os campos para o padrão do banco (snake_case)
-        const dbUpdates: any = {};
-        if (updates.status !== undefined) dbUpdates.status = updates.status;
-        if (updates.checklist !== undefined) dbUpdates.checklist = updates.checklist;
-        if (updates.photos !== undefined) dbUpdates.photos = updates.photos;
-        if (updates.startedAt !== undefined) dbUpdates.started_at = updates.startedAt;
-        if (updates.completedAt !== undefined) dbUpdates.completed_at = updates.completedAt;
-        if (updates.durationMinutes !== undefined) dbUpdates.duration_minutes = updates.durationMinutes;
-        if (updates.fatorMamaeVerified !== undefined) dbUpdates.fator_mamae_verified = updates.fatorMamaeVerified;
+        // Formata para o banco (snake_case)
+        const dbFields: any = {};
+        if (updates.status !== undefined) dbFields.status = updates.status;
+        if (updates.checklist !== undefined) dbFields.checklist = updates.checklist;
+        if (updates.photos !== undefined) dbFields.photos = updates.photos;
+        if (updates.startedAt !== undefined) dbFields.started_at = updates.startedAt;
+        if (updates.completedAt !== undefined) dbFields.completed_at = updates.completedAt;
+        if (updates.durationMinutes !== undefined) dbFields.duration_minutes = updates.durationMinutes;
+        if (updates.fatorMamaeVerified !== undefined) dbFields.fator_mamae_verified = updates.fatorMamaeVerified;
 
-        const { error } = await supabase.from('tasks').update(dbUpdates).eq('id', taskId);
+        const { error } = await supabase.from('tasks').update(dbFields).eq('id', taskId);
         
-        // Se houver erro no banco, reverte ou sincroniza para garantir integridade
         if (error) {
-           console.error("Erro ao atualizar tarefa no banco:", error);
+           console.error("Sync back error:", error);
+           // Se der erro, revertemos para o estado do banco
            await get().syncData(); 
         }
       },

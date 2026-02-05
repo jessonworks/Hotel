@@ -19,11 +19,10 @@ export const NAVIGATION_ITEMS = [
   { id: 'guests', label: 'Hóspedes', icon: <Users size={20} />, roles: [UserRole.ADMIN, UserRole.MANAGER] },
   { id: 'laundry', label: 'Lavanderia', icon: <Wind size={20} />, roles: [UserRole.ADMIN, UserRole.MANAGER, UserRole.STAFF] },
   { id: 'inventory', label: 'Estoque', icon: <Box size={20} />, roles: [UserRole.ADMIN, UserRole.MANAGER] },
-  { id: 'team', label: 'Equipe (Usuários)', icon: <ShieldCheck size={20} />, roles: [UserRole.ADMIN, UserRole.MANAGER] },
+  { id: 'team', label: 'Equipe', icon: <ShieldCheck size={20} />, roles: [UserRole.ADMIN, UserRole.MANAGER] },
   { id: 'financial', label: 'Financeiro', icon: <BarChart3 size={20} />, roles: [UserRole.ADMIN] },
 ];
 
-// Checklists individuais por categoria ou ID de área
 export const CHECKLIST_TEMPLATES: Record<string, string[]> = {
   [RoomCategory.GUEST_ROOM]: [
     "Banheiro: verificar ralos e cabelos no chão",
@@ -35,31 +34,31 @@ export const CHECKLIST_TEMPLATES: Record<string, string[]> = {
     "Lixos retirados e sacos trocados"
   ],
   'area-cozinha': [
-    "Cozinha: limpeza de bancadas e pias",
-    "Cozinha: limpeza de fogão e microondas",
-    "Cozinha: retirar lixos e trocar sacos",
-    "Cozinha: organizar geladeira comum",
-    "Cozinha: varrer e passar pano no chão"
+    "Limpeza de bancadas e pias",
+    "Limpeza de fogão e microondas",
+    "Retirar lixos e trocar sacos",
+    "Organizar geladeira comum",
+    "Varrer e passar pano no chão"
   ],
   'area-recepcao': [
-    "Recepção: organizar balcão principal",
-    "Recepção: varrer e aspirar tapetes",
-    "Recepção: limpar vidros da entrada",
-    "Recepção: higienizar máquinas de cartão",
-    "Recepção: verificar bebedouro/café"
+    "Organizar balcão principal",
+    "Varrer e aspirar tapetes",
+    "Limpar vidros da entrada",
+    "Higienizar máquinas de cartão",
+    "Verificar bebedouro/café"
   ],
   'area-escadas': [
-    "Escadas: varrer todos os degraus",
-    "Escadas: higienizar corrimão",
-    "Escadas: retirar teias de aranha dos cantos",
-    "Escadas: limpar rodapés"
+    "Varrer todos os degraus",
+    "Higienizar corrimão",
+    "Retirar teias de aranha dos cantos",
+    "Limpar rodapés"
   ],
   'area-laje': [
-    "Laje: organizar móveis e cadeiras",
-    "Laje: varrer toda a extensão",
-    "Laje: verificar se há focos de água parada",
-    "Laje: limpeza de cinzeiros (se houver)",
-    "Laje: verificar iluminação"
+    "Organizar móveis e cadeiras",
+    "Varrer toda a extensão",
+    "Verificar focos de água parada",
+    "Limpeza de cinzeiros",
+    "Verificar iluminação"
   ]
 };
 

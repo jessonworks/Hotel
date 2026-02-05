@@ -9,14 +9,11 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-/** 
- * CRÍTICO: No Vite, o 'define' substitui tokens literais. 
- * O uso de funções como getEnv('KEY') falha porque o Vite não as processa.
- */
+// Variáveis injetadas pelo Vite no build da Vercel
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
 
-// Inicialização do cliente Supabase
+// Inicialização segura do cliente
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
@@ -90,17 +87,20 @@ export const useStore = create<AppState>()(
           return;
         }
         try {
+          // Teste simples de conexão com a tabela de usuários
           const { error } = await supabase.from('users').select('id').limit(1);
-          set({ isSupabaseConnected: !error });
-        } catch { 
-          set({ isSupabaseConnected: false }); 
+          set({ isSupabaseConnected: !error, connectionError: error ? error.message : null });
+        } catch (err: any) { 
+          set({ isSupabaseConnected: false, connectionError: err.message }); 
         }
       },
 
       subscribeToChanges: () => {
         if (!supabase) return () => {};
         const channel = supabase.channel('global-sync')
-          .on('postgres_changes', { event: '*', schema: 'public' }, () => get().syncData())
+          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+            get().syncData();
+          })
           .subscribe();
         return () => { supabase.removeChannel(channel); };
       },
@@ -114,11 +114,11 @@ export const useStore = create<AppState>()(
           const [u, r, t, i, g, a, tr, l] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*').order('number'),
-            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(50),
+            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
-            supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(10),
-            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(20),
+            supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
+            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
             supabase.from('laundry').select('*')
           ]);
 
@@ -127,11 +127,17 @@ export const useStore = create<AppState>()(
               id: x.id, 
               email: x.email, 
               fullName: x.full_name, 
-              role: x.role, 
+              role: x.role as UserRole, 
               password: x.password 
             })),
             rooms: (r.data || []).map(x => ({ 
-              ...x, 
+              id: x.id,
+              number: x.number,
+              floor: x.floor,
+              type: x.type as RoomType,
+              category: x.category as RoomCategory,
+              status: x.status as RoomStatus,
+              maxGuests: x.max_guests,
               bedsCount: x.beds_count, 
               hasMinibar: x.has_minibar, 
               hasBalcony: x.has_balcony, 
@@ -142,7 +148,7 @@ export const useStore = create<AppState>()(
               roomId: x.room_id, 
               assignedTo: x.assigned_to, 
               assignedByName: x.assigned_by_name, 
-              status: x.status, 
+              status: x.status as CleaningStatus, 
               startedAt: x.started_at, 
               completedAt: x.completed_at, 
               durationMinutes: x.duration_minutes, 
@@ -154,7 +160,10 @@ export const useStore = create<AppState>()(
               bedsToMake: x.beds_to_make || 0
             })),
             inventory: (i.data || []).map(x => ({ 
-              ...x, 
+              id: x.id,
+              name: x.name,
+              category: x.category,
+              quantity: x.quantity,
               minStock: x.min_stock, 
               unitCost: x.unit_cost, 
               price: x.price 
@@ -168,20 +177,22 @@ export const useStore = create<AppState>()(
               roomId: x.room_id, 
               dailyRate: x.daily_rate, 
               totalValue: x.total_value, 
-              paymentMethod: x.payment_method,
+              paymentMethod: x.payment_method as PaymentMethod,
               checkedOutAt: x.checked_out_at
             })),
             announcements: (a.data || []).map(x => ({ 
-              ...x, 
-              authorName: x.author_name, 
-              createdAt: x.created_at 
+              id: x.id,
+              authorName: x.author_name,
+              content: x.content,
+              createdAt: x.created_at,
+              priority: x.priority
             })),
             transactions: (tr.data || []),
             laundry: (l.data || []).map(x => ({ 
               id: x.id, 
               type: x.type, 
               quantity: x.quantity, 
-              stage: x.stage, 
+              stage: x.stage as LaundryStage, 
               roomOrigin: x.room_origin, 
               lastUpdated: x.last_updated 
             })),
@@ -189,18 +200,14 @@ export const useStore = create<AppState>()(
             isSupabaseConnected: true
           });
         } catch (err) { 
-          console.error("Erro na sincronização:", err);
+          console.error("Erro crítico na sincronização:", err);
           set({ isInitialLoading: false }); 
         }
       },
 
       login: async (email, password) => {
-        if (!supabase) {
-          console.error("Supabase não configurado. Verifique as chaves na Vercel.");
-          return false;
-        }
+        if (!supabase) return false;
         try {
-          // Busca exata respeitando o SQL: coluna full_name mapeada para o objeto local
           const { data, error } = await supabase
             .from('users')
             .select('*')
@@ -208,34 +215,31 @@ export const useStore = create<AppState>()(
             .eq('password', password)
             .maybeSingle();
 
-          if (error) {
-            console.error("Erro no login:", error);
+          if (error || !data) {
+            console.error("Erro login:", error);
             return false;
           }
 
-          if (data) {
-            set({ 
-              currentUser: { 
-                id: data.id, 
-                email: data.email, 
-                fullName: data.full_name, 
-                role: data.role as UserRole, 
-                password: data.password 
-              } 
-            });
-            get().syncData();
-            return true;
-          }
+          set({ 
+            currentUser: { 
+              id: data.id, 
+              email: data.email, 
+              fullName: data.full_name, 
+              role: data.role as UserRole, 
+              password: data.password 
+            } 
+          });
+          await get().syncData();
+          return true;
         } catch (e) {
-          console.error("Exceção no login:", e);
+          console.error("Falha no login:", e);
+          return false;
         }
-        return false;
       },
 
       logout: () => set({ currentUser: null }),
 
       uploadPhoto: async (file) => {
-        // Método estável Base64 para garantir que as fotos do Fator Mamãe funcionem sempre
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -275,16 +279,15 @@ export const useStore = create<AppState>()(
       },
 
       addLaundry: async (item) => {
-        if (supabase) {
-          await supabase.from('laundry').insert({ 
-            id: `l-${Date.now()}`, 
-            type: item.type, 
-            quantity: item.quantity, 
-            stage: item.stage, 
-            room_origin: item.roomOrigin, 
-            last_updated: new Date().toISOString() 
-          });
-        }
+        if (!supabase) return;
+        await supabase.from('laundry').insert({ 
+          id: `l-${Date.now()}`, 
+          type: item.type, 
+          quantity: item.quantity, 
+          stage: item.stage, 
+          room_origin: item.roomOrigin, 
+          last_updated: new Date().toISOString() 
+        });
         get().syncData();
       },
 
@@ -337,15 +340,14 @@ export const useStore = create<AppState>()(
       },
 
       addUser: async (u) => { 
-        if (supabase) {
-          await supabase.from('users').insert({ 
-            id: `u-${Date.now()}`, 
-            full_name: u.fullName, 
-            email: u.email,
-            password: u.password,
-            role: u.role
-          }); 
-        }
+        if (!supabase) return;
+        await supabase.from('users').insert({ 
+          id: `u-${Date.now()}`, 
+          full_name: u.fullName, 
+          email: u.email,
+          password: u.password,
+          role: u.role
+        }); 
         get().syncData(); 
       },
       
@@ -354,28 +356,26 @@ export const useStore = create<AppState>()(
       updateUserPassword: async (id, p) => { if (supabase) await supabase.from('users').update({ password: p }).eq('id', id); get().syncData(); },
       
       addAnnouncement: async (c, p) => { 
-        if (supabase) {
-          await supabase.from('announcements').insert({ 
-            id: `a-${Date.now()}`, 
-            author_name: get().currentUser?.fullName, 
-            content: c, 
-            priority: p 
-          }); 
-        }
+        if (!supabase) return;
+        await supabase.from('announcements').insert({ 
+          id: `a-${Date.now()}`, 
+          author_name: get().currentUser?.fullName, 
+          content: c, 
+          priority: p 
+        }); 
         get().syncData(); 
       },
 
       addTransaction: async (d) => { 
-        if (supabase) {
-          await supabase.from('transactions').insert({ 
-            id: `tr-${Date.now()}`, 
-            type: d.type,
-            category: d.category,
-            amount: d.amount,
-            description: d.description,
-            date: new Date().toISOString()
-          }); 
-        }
+        if (!supabase) return;
+        await supabase.from('transactions').insert({ 
+          id: `tr-${Date.now()}`, 
+          type: d.type,
+          category: d.category,
+          amount: d.amount,
+          description: d.description,
+          date: new Date().toISOString()
+        }); 
         get().syncData(); 
       },
 
@@ -405,22 +405,21 @@ export const useStore = create<AppState>()(
       },
 
       addInventory: async (item) => { 
-        if (supabase) {
-          await supabase.from('inventory').insert({ 
-            id: `i-${Date.now()}`, 
-            name: item.name,
-            category: item.category,
-            quantity: item.quantity,
-            min_stock: item.minStock,
-            unit_cost: item.unitCost,
-            price: item.price
-          }); 
-        }
+        if (!supabase) return;
+        await supabase.from('inventory').insert({ 
+          id: `i-${Date.now()}`, 
+          name: item.name,
+          category: item.category,
+          quantity: item.quantity,
+          min_stock: item.minStock,
+          unit_cost: item.unitCost,
+          price: item.price
+        }); 
         get().syncData(); 
       },
     }),
     {
-      name: 'hospedapro-stable-session-v4',
+      name: 'hospedapro-v1-stable',
       storage: createJSONStorage(() => localStorage),
     }
   )

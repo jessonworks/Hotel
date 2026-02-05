@@ -9,9 +9,15 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-// Forçar leitura das chaves do ambiente (Vercel ou local)
-const SUPABASE_URL = process.env.SUPABASE_URL || (window.process?.env as any)?.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || (window.process?.env as any)?.SUPABASE_ANON_KEY || '';
+// Função robusta para capturar variáveis de ambiente em qualquer contexto (Vite, Vercel, Node)
+const getEnv = (key: string): string => {
+  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key] as string;
+  if (typeof window !== 'undefined' && (window as any).process?.env?.[key]) return (window as any).process.env[key];
+  return '';
+};
+
+const SUPABASE_URL = getEnv('SUPABASE_URL');
+const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
 
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
@@ -181,7 +187,6 @@ export const useStore = create<AppState>()(
       logout: () => set({ currentUser: null }),
 
       uploadPhoto: async (file) => {
-        // Método estável Base64: salva direto no JSONB do banco
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -263,15 +268,12 @@ export const useStore = create<AppState>()(
           payment_method: data.paymentMethod 
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
-        
-        // Registrar transação financeira
         await get().addTransaction({
           type: 'INCOME',
           category: 'RESERVATION',
           amount: data.totalValue,
-          description: `Reserva - ${data.fullName} (Unidade ${get().rooms.find(r => r.id === data.roomId)?.number})`
+          description: `Reserva - ${data.fullName}`
         });
-        
         get().syncData();
       },
 
@@ -369,7 +371,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'hospedapro-stable-session-v2',
+      name: 'hospedapro-stable-session-v3',
       storage: createJSONStorage(() => localStorage),
     }
   )

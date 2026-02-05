@@ -9,8 +9,9 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-const SUPABASE_URL = (window.process?.env as any)?.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = (window.process?.env as any)?.SUPABASE_ANON_KEY || '';
+// Forçar leitura das chaves do ambiente (Vercel ou local)
+const SUPABASE_URL = process.env.SUPABASE_URL || (window.process?.env as any)?.SUPABASE_URL || '';
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || (window.process?.env as any)?.SUPABASE_ANON_KEY || '';
 
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
@@ -118,7 +119,6 @@ export const useStore = create<AppState>()(
           set({
             users: (u.data || []).map(x => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role, password: x.password })),
             rooms: (r.data || []).map(x => ({ ...x, bedsCount: x.beds_count, hasMinibar: x.has_minibar, hasBalcony: x.has_balcony, icalUrl: x.ical_url })),
-            // FIX: Added missing bedsToMake property to satisfy CleaningTask interface
             tasks: (t.data || []).map(x => ({ 
               id: x.id, 
               roomId: x.room_id, 
@@ -135,15 +135,36 @@ export const useStore = create<AppState>()(
               fatorMamaeVerified: x.fator_mamae_verified,
               bedsToMake: x.beds_to_make || 0
             })),
-            inventory: (i.data || []).map(x => ({ ...x, minStock: x.min_stock, unitCost: x.unit_cost })),
-            guests: (g.data || []).map(x => ({ id: x.id, fullName: x.full_name, document: x.document, checkIn: x.check_in, checkOut: x.check_out, roomId: x.room_id, dailyRate: x.daily_rate, totalValue: x.total_value, paymentMethod: x.payment_method })),
+            inventory: (i.data || []).map(x => ({ ...x, minStock: x.min_stock, unitCost: x.unit_cost, price: x.price })),
+            guests: (g.data || []).map(x => ({ 
+              id: x.id, 
+              fullName: x.full_name, 
+              document: x.document, 
+              checkIn: x.check_in, 
+              checkOut: x.check_out, 
+              roomId: x.room_id, 
+              dailyRate: x.daily_rate, 
+              totalValue: x.total_value, 
+              paymentMethod: x.payment_method,
+              checkedOutAt: x.checked_out_at
+            })),
             announcements: (a.data || []).map(x => ({ ...x, authorName: x.author_name, createdAt: x.created_at })),
             transactions: (tr.data || []),
-            laundry: (l.data || []).map(x => ({ ...x, roomOrigin: x.room_origin, lastUpdated: x.last_updated })),
+            laundry: (l.data || []).map(x => ({ 
+              id: x.id, 
+              type: x.type, 
+              quantity: x.quantity, 
+              stage: x.stage, 
+              roomOrigin: x.room_origin, 
+              lastUpdated: x.last_updated 
+            })),
             isInitialLoading: false,
             isSupabaseConnected: true
           });
-        } catch { set({ isInitialLoading: false }); }
+        } catch (err) { 
+          console.error("Sync error:", err);
+          set({ isInitialLoading: false }); 
+        }
       },
 
       login: async (email, password) => {
@@ -160,7 +181,7 @@ export const useStore = create<AppState>()(
       logout: () => set({ currentUser: null }),
 
       uploadPhoto: async (file) => {
-        // Fallback para base64 para evitar erros de permissão de Storage
+        // Método estável Base64: salva direto no JSONB do banco
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -178,6 +199,8 @@ export const useStore = create<AppState>()(
         if (updates.completedAt) dbFields.completed_at = updates.completedAt;
         if (updates.durationMinutes) dbFields.duration_minutes = updates.durationMinutes;
         if (updates.fatorMamaeVerified !== undefined) dbFields.fator_mamae_verified = updates.fatorMamaeVerified;
+        if (updates.bedsToMake !== undefined) dbFields.beds_to_make = updates.bedsToMake;
+        
         await supabase.from('tasks').update(dbFields).eq('id', id);
         get().syncData();
       },
@@ -198,7 +221,16 @@ export const useStore = create<AppState>()(
       },
 
       addLaundry: async (item) => {
-        if (supabase) await supabase.from('laundry').insert({ id: `l-${Date.now()}`, ...item, room_origin: item.roomOrigin, last_updated: new Date().toISOString() });
+        if (supabase) {
+          await supabase.from('laundry').insert({ 
+            id: `l-${Date.now()}`, 
+            type: item.type, 
+            quantity: item.quantity, 
+            stage: item.stage, 
+            room_origin: item.roomOrigin, 
+            last_updated: new Date().toISOString() 
+          });
+        }
         get().syncData();
       },
 
@@ -218,8 +250,28 @@ export const useStore = create<AppState>()(
 
       checkIn: async (data) => {
         if (!supabase) return;
-        await supabase.from('guests').insert({ id: `g-${Date.now()}`, full_name: data.fullName, ...data, room_id: data.roomId, daily_rate: data.dailyRate, total_value: data.totalValue, payment_method: data.paymentMethod });
+        const id = `g-${Date.now()}`;
+        await supabase.from('guests').insert({ 
+          id, 
+          full_name: data.fullName, 
+          document: data.document,
+          check_in: data.checkIn,
+          check_out: data.checkOut,
+          room_id: data.roomId, 
+          daily_rate: data.dailyRate, 
+          total_value: data.totalValue, 
+          payment_method: data.paymentMethod 
+        });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
+        
+        // Registrar transação financeira
+        await get().addTransaction({
+          type: 'INCOME',
+          category: 'RESERVATION',
+          amount: data.totalValue,
+          description: `Reserva - ${data.fullName} (Unidade ${get().rooms.find(r => r.id === data.roomId)?.number})`
+        });
+        
         get().syncData();
       },
 
@@ -233,27 +285,91 @@ export const useStore = create<AppState>()(
         }
       },
 
-      addUser: async (u) => { if (supabase) await supabase.from('users').insert({ id: `u-${Date.now()}`, full_name: u.fullName, ...u }); get().syncData(); },
+      addUser: async (u) => { 
+        if (supabase) {
+          await supabase.from('users').insert({ 
+            id: `u-${Date.now()}`, 
+            full_name: u.fullName, 
+            email: u.email,
+            password: u.password,
+            role: u.role
+          }); 
+        }
+        get().syncData(); 
+      },
+      
       removeUser: async (id) => { if (supabase) await supabase.from('users').delete().eq('id', id); get().syncData(); },
       updateCurrentUser: (u) => set(s => ({ currentUser: s.currentUser ? { ...s.currentUser, ...u } : null })),
       updateUserPassword: async (id, p) => { if (supabase) await supabase.from('users').update({ password: p }).eq('id', id); get().syncData(); },
-      addAnnouncement: async (c, p) => { if (supabase) await supabase.from('announcements').insert({ id: `a-${Date.now()}`, author_name: get().currentUser?.fullName, content: c, priority: p }); get().syncData(); },
-      addTransaction: async (d) => { if (supabase) await supabase.from('transactions').insert({ id: `tr-${Date.now()}`, ...d }); get().syncData(); },
+      
+      addAnnouncement: async (c, p) => { 
+        if (supabase) {
+          await supabase.from('announcements').insert({ 
+            id: `a-${Date.now()}`, 
+            author_name: get().currentUser?.fullName, 
+            content: c, 
+            priority: p 
+          }); 
+        }
+        get().syncData(); 
+      },
+
+      addTransaction: async (d) => { 
+        if (supabase) {
+          await supabase.from('transactions').insert({ 
+            id: `tr-${Date.now()}`, 
+            type: d.type,
+            category: d.category,
+            amount: d.amount,
+            description: d.description,
+            date: new Date().toISOString()
+          }); 
+        }
+        get().syncData(); 
+      },
+
       updateRoomICal: async (id, url) => { if (supabase) await supabase.from('rooms').update({ ical_url: url }).eq('id', id); get().syncData(); },
       syncICal: async () => get().syncData(),
+      
       createTask: async (data) => {
         if (!supabase) return;
         const id = `t-${Date.now()}`;
         const room = get().rooms.find(r => r.id === data.roomId);
         const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        await supabase.from('tasks').insert({ id, room_id: data.roomId, assigned_to: data.assignedTo, assigned_by_name: get().currentUser?.fullName, status: 'pendente', deadline: data.deadline, notes: data.notes, checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}) });
+        
+        await supabase.from('tasks').insert({ 
+          id, 
+          room_id: data.roomId, 
+          assigned_to: data.assignedTo, 
+          assigned_by_name: get().currentUser?.fullName, 
+          status: 'pendente', 
+          deadline: data.deadline, 
+          notes: data.notes, 
+          beds_to_make: data.bedsToMake || 0,
+          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}) 
+        });
+        
         await supabase.from('rooms').update({ status: 'limpando' }).eq('id', data.roomId);
         get().syncData();
       },
-      addInventory: async (item) => { if (supabase) await supabase.from('inventory').insert({ id: `i-${Date.now()}`, ...item, min_stock: item.minStock, unit_cost: item.unitCost }); get().syncData(); },
+
+      addInventory: async (item) => { 
+        if (supabase) {
+          await supabase.from('inventory').insert({ 
+            id: `i-${Date.now()}`, 
+            name: item.name,
+            category: item.category,
+            quantity: item.quantity,
+            min_stock: item.minStock,
+            unit_cost: item.unitCost,
+            price: item.price
+          }); 
+        }
+        get().syncData(); 
+      },
     }),
     {
-      name: 'hospedapro-stable-session',
+      name: 'hospedapro-stable-session-v2',
       storage: createJSONStorage(() => localStorage),
     }
   )

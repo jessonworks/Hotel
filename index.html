@@ -10,9 +10,12 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Shim de segurança NÃO-DESTRUTIVO
-      window.process = window.process || {};
-      window.process.env = window.process.env || {};
+      // Shim de segurança robusto para o ambiente
+      if (typeof window.process === 'undefined') {
+        window.process = { env: {} };
+      } else if (typeof window.process.env === 'undefined') {
+        window.process.env = {};
+      }
       
       tailwind.config = {
         theme: {
@@ -32,12 +35,6 @@
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-      @keyframes shake {
-        0%, 100% { transform: translateX(0); }
-        25% { transform: translateX(-5px); }
-        75% { transform: translateX(5px); }
-      }
-      .animate-shake { animation: shake 0.5s cubic-bezier(.36,.07,.19,.97) both; }
     </style>
     <script type="importmap">
 {

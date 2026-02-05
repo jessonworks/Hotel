@@ -11,10 +11,11 @@ import { CHECKLIST_TEMPLATES } from './constants';
 
 const getEnv = (key: string): string => {
   try {
-    // Tenta ler de várias fontes comuns de ambiente em sandboxes
+    // Busca exaustiva em todas as possíveis fontes de variáveis de ambiente
     return (
-      (window.process?.env as any)?.[key] || 
-      (typeof process !== 'undefined' ? (process.env as any)?.[key] : '') ||
+      (window as any).process?.env?.[key] || 
+      (typeof process !== 'undefined' ? process.env[key] : '') ||
+      (window as any).importMeta?.env?.[key] ||
       ''
     );
   } catch {
@@ -25,7 +26,7 @@ const getEnv = (key: string): string => {
 const SUPABASE_URL = getEnv('SUPABASE_URL') || getEnv('VITE_SUPABASE_URL');
 const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY') || getEnv('VITE_SUPABASE_ANON_KEY');
 
-// Só cria o cliente se tivermos as chaves
+// Cliente Supabase instanciado apenas se as chaves existirem
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
@@ -95,7 +96,7 @@ export const useStore = create<AppState>()(
 
       checkConnection: async () => {
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Configurações do Supabase ausentes' });
+          set({ isSupabaseConnected: false, connectionError: 'Chaves do Supabase ausentes' });
           return;
         }
         try {
@@ -127,35 +128,79 @@ export const useStore = create<AppState>()(
         }
         
         try {
-          const [u, r, t, i, g, a, tr, l] = await Promise.all([
-            supabase.from('users').select('*'),
-            supabase.from('rooms').select('*').order('number'),
-            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
-            supabase.from('inventory').select('*'),
-            supabase.from('guests').select('*').is('checked_out_at', null),
-            supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
-            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
-            supabase.from('laundry').select('*').order('last_updated', { ascending: false })
+          const fetchSafely = async (table: string, options: any = {}) => {
+            try {
+              let query = supabase!.from(table).select('*');
+              if (options.order) query = query.order(options.order, { ascending: options.asc ?? false });
+              if (options.limit) query = query.limit(options.limit);
+              const { data, error } = await query;
+              if (error) throw error;
+              return data || [];
+            } catch (err) {
+              console.warn(`Erro na tabela ${table}:`, err);
+              return [];
+            }
+          };
+
+          const [uData, rData, tData, iData, gData, aData, trData, lData] = await Promise.all([
+            fetchSafely('users'),
+            fetchSafely('rooms', { order: 'number', asc: true }),
+            fetchSafely('tasks', { order: 'id', limit: 50 }),
+            fetchSafely('inventory'),
+            supabase!.from('guests').select('*').is('checked_out_at', null),
+            fetchSafely('announcements', { order: 'created_at', limit: 20 }),
+            fetchSafely('transactions', { order: 'date', limit: 50 }),
+            fetchSafely('laundry')
           ]);
 
-          if (u.data) set({ users: u.data.map(x => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role, password: x.password })) });
-          if (r.data) set({ rooms: r.data.map(x => ({ id: x.id, number: x.number, floor: x.floor, status: x.status, category: x.category, type: x.type || 'standard', maxGuests: x.max_guests || 2, bedsCount: x.beds_count || 1, hasMinibar: !!x.has_minibar, hasBalcony: !!x.has_balcony, icalUrl: x.ical_url })) });
-          if (l.data) set({ laundry: l.data.map(x => ({ id: x.id, type: x.type, quantity: x.quantity, stage: x.stage, room_origin: x.room_origin, lastUpdated: x.last_updated })) });
-          if (t.data) set({ tasks: t.data.map(x => ({ id: x.id, roomId: x.room_id, assignedTo: x.assigned_to, assignedByName: x.assigned_by_name, status: x.status, startedAt: x.started_at, completedAt: x.completed_at, durationMinutes: x.duration_minutes, deadline: x.deadline, notes: x.notes, checklist: x.checklist || {}, photos: x.photos || [], fatorMamaeVerified: !!x.fator_mamae_verified, bedsToMake: x.beds_to_make || 0 })) });
-          if (i.data) set({ inventory: i.data.map(x => ({ id: x.id, name: x.name, category: x.category, quantity: x.quantity, minStock: x.min_stock, price: x.price || 0, unitCost: x.unit_cost || 0 })) });
-          if (g.data) set({ guests: g.data.map(x => ({ id: x.id, fullName: x.full_name, document: x.document, checkIn: x.check_in, checkOut: x.check_out, roomId: x.room_id, dailyRate: x.daily_rate, totalValue: x.total_value, paymentMethod: x.payment_method })) });
-          if (a.data) set({ announcements: a.data.map(x => ({ id: x.id, authorName: x.author_name, content: x.content, priority: x.priority, createdAt: x.created_at })) });
-          if (tr.data) set({ transactions: tr.data.map(x => ({ id: x.id, date: x.date, type: x.type, category: x.category, amount: x.amount, description: x.description })) });
-
-          set({ isInitialLoading: false, isSupabaseConnected: true });
+          // Mapeamento resiliente
+          set({
+            users: uData.map((x: any) => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role, password: x.password })),
+            rooms: (rData as any[]).map((x: any) => ({ 
+              id: x.id, number: x.number, floor: x.floor, status: x.status, category: x.category, 
+              type: x.type || 'standard', maxGuests: x.max_guests || 2, bedsCount: x.beds_count || 1, 
+              hasMinibar: !!x.has_minibar, hasBalcony: !!x.has_balcony, icalUrl: x.ical_url 
+            })),
+            laundry: (lData as any[]).map((x: any) => ({ 
+              id: x.id, type: x.type, quantity: x.quantity, stage: x.stage, 
+              roomOrigin: x.room_origin, lastUpdated: x.last_updated 
+            })),
+            tasks: (tData as any[]).map((x: any) => ({ 
+              id: x.id, roomId: x.room_id, assignedTo: x.assigned_to, assignedByName: x.assigned_by_name, 
+              status: x.status, startedAt: x.started_at, completedAt: x.completed_at, 
+              durationMinutes: x.duration_minutes, deadline: x.deadline, notes: x.notes, 
+              checklist: x.checklist || {}, photos: x.photos || [], 
+              fatorMamaeVerified: !!x.fator_mamae_verified, bedsToMake: x.beds_to_make || 0 
+            })),
+            inventory: (iData as any[]).map((x: any) => ({ 
+              id: x.id, name: x.name, category: x.category, quantity: x.quantity, 
+              minStock: x.min_stock, price: Number(x.price) || 0, unitCost: Number(x.unit_cost) || 0 
+            })),
+            guests: (gData.data || []).map((x: any) => ({ 
+              id: x.id, fullName: x.full_name, document: x.document, checkIn: x.check_in, 
+              checkOut: x.check_out, roomId: x.room_id, dailyRate: Number(x.daily_rate), 
+              totalValue: Number(x.total_value), paymentMethod: x.payment_method 
+            })),
+            announcements: (aData as any[]).map((x: any) => ({ 
+              id: x.id, authorName: x.author_name, content: x.content, 
+              priority: x.priority, createdAt: x.created_at 
+            })),
+            transactions: (trData as any[]).map((x: any) => ({ 
+              id: x.id, date: x.date, type: x.type, category: x.category, 
+              amount: Number(x.amount), description: x.description 
+            })),
+            isInitialLoading: false,
+            isSupabaseConnected: true
+          });
         } catch (e) {
-          console.error("Erro Crítico de Sincronização:", e);
+          console.error("Crash na sincronização:", e);
           set({ isInitialLoading: false });
         }
       },
 
       login: async (email, password) => {
         if (!supabase) {
+          // Fallback offline caso as chaves não estejam configuradas
           if (email === 'admin@admin.com' && password === 'admin') {
             set({ currentUser: { id: 'offline-admin', email, fullName: 'Administrador Local', role: UserRole.ADMIN } });
             return true;
@@ -174,7 +219,8 @@ export const useStore = create<AppState>()(
             await get().syncData();
             return true;
           }
-        } catch {
+        } catch (e) {
+          console.error("Login Error:", e);
           return false;
         }
         return false;
@@ -270,7 +316,7 @@ export const useStore = create<AppState>()(
           await supabase.from('guests').insert({
             id: `g-${Date.now()}`, full_name: data.fullName, document: data.document,
             check_in: data.checkIn, check_out: data.checkOut, room_id: data.roomId,
-            daily_rate: data.dailyRate, total_value: data.totalValue, payment_method: data.paymentMethod
+            daily_rate: data.dailyRate, total_value: data.totalValue, payment_method: data.payment_method
           });
           await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
           await get().syncData();

@@ -9,11 +9,9 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-// Variáveis injetadas pelo Vite no build da Vercel
-const SUPABASE_URL = process.env.SUPABASE_URL || "";
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
+const SUPABASE_URL = process.env.SUPABASE_URL || (window as any).process?.env?.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || (window as any).process?.env?.SUPABASE_ANON_KEY || "";
 
-// Inicialização segura do cliente
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
@@ -30,39 +28,34 @@ interface AppState {
   transactions: Transaction[];
   isSupabaseConnected: boolean;
   isInitialLoading: boolean;
-  connectionError: string | null;
   
   login: (email: string, password?: string) => Promise<boolean>;
   logout: () => void;
   syncData: () => Promise<void>;
-  subscribeToChanges: () => () => void;
+  forceDemoLogin: () => void;
   checkConnection: () => Promise<void>;
-  
-  updateCurrentUser: (updates: Partial<User>) => void;
-  updateUserPassword: (userId: string, newPass: string) => Promise<void>;
-  uploadPhoto: (file: Blob, path: string) => Promise<string | null>;
-  
-  createTask: (data: Partial<CleaningTask>) => Promise<void>;
-  updateTask: (taskId: string, updates: Partial<CleaningTask>) => Promise<void>;
-  approveTask: (taskId: string) => Promise<void>;
-  updateRoomStatus: (roomId: string, status: RoomStatus) => Promise<void>;
-  updateRoomICal: (roomId: string, icalUrl: string) => Promise<void>;
-  syncICal: (roomId: string) => Promise<void>;
-  
-  addLaundry: (item: Omit<LaundryItem, 'id' | 'lastUpdated'>) => Promise<void>;
-  moveLaundry: (itemId: string, stage: LaundryStage) => Promise<void>;
-  
-  addInventory: (item: Omit<InventoryItem, 'id'>) => Promise<void>;
+  subscribeToChanges: () => () => void;
+
+  // Actions
+  updateRoomStatus: (id: string, status: RoomStatus) => Promise<void>;
+  createTask: (data: any) => Promise<void>;
+  updateTask: (id: string, updates: any) => Promise<void>;
+  approveTask: (id: string) => Promise<void>;
+  checkIn: (data: any) => Promise<void>;
+  checkOut: (id: string) => Promise<void>;
+  addAnnouncement: (content: string, priority: any) => Promise<void>;
+  addTransaction: (data: any) => Promise<void>;
+  addLaundry: (item: any) => Promise<void>;
+  moveLaundry: (id: string, stage: LaundryStage) => Promise<void>;
   updateInventory: (id: string, qty: number) => Promise<void>;
-  
-  checkIn: (guest: Omit<Guest, 'id'>) => Promise<void>;
-  checkOut: (guestId: string) => Promise<void>;
-  
-  addAnnouncement: (content: string, priority: 'low' | 'normal' | 'high') => Promise<void>;
-  addTransaction: (data: Omit<Transaction, 'id' | 'date'>) => Promise<void>;
-  
-  addUser: (user: Omit<User, 'id'>) => Promise<void>;
+  addUser: (u: any) => Promise<void>;
   removeUser: (id: string) => Promise<void>;
+  updateCurrentUser: (u: Partial<User>) => void;
+  updateUserPassword: (id: string, p: string) => Promise<void>;
+  uploadPhoto: (file: Blob, path: string) => Promise<string | null>;
+  updateRoomICal: (id: string, url: string) => Promise<void>;
+  syncICal: (id: string) => Promise<void>;
+  addInventory: (item: any) => Promise<void>;
 }
 
 export const useStore = create<AppState>()(
@@ -78,129 +71,71 @@ export const useStore = create<AppState>()(
       announcements: [],
       transactions: [],
       isSupabaseConnected: !!supabase,
-      isInitialLoading: true,
-      connectionError: null,
+      isInitialLoading: false,
+
+      forceDemoLogin: () => {
+        set({ 
+          currentUser: { id: 'demo', email: 'gerente@hospedapro.com', fullName: 'Gerente Demo', role: UserRole.MANAGER },
+          isInitialLoading: false 
+        });
+        get().syncData();
+      },
 
       checkConnection: async () => {
-        if (!supabase) {
-          set({ isSupabaseConnected: false });
-          return;
-        }
+        if (!supabase) return;
         try {
-          // Teste simples de conexão com a tabela de usuários
           const { error } = await supabase.from('users').select('id').limit(1);
-          set({ isSupabaseConnected: !error, connectionError: error ? error.message : null });
-        } catch (err: any) { 
-          set({ isSupabaseConnected: false, connectionError: err.message }); 
-        }
+          set({ isSupabaseConnected: !error });
+        } catch { set({ isSupabaseConnected: false }); }
       },
 
       subscribeToChanges: () => {
         if (!supabase) return () => {};
-        const channel = supabase.channel('global-sync')
-          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-            get().syncData();
-          })
+        const channel = supabase.channel('db-changes')
+          .on('postgres_changes', { event: '*', schema: 'public' }, () => get().syncData())
           .subscribe();
-        return () => { supabase.removeChannel(channel); };
+        return () => supabase.removeChannel(channel);
       },
 
       syncData: async () => {
-        if (!supabase) {
-          set({ isInitialLoading: false, isSupabaseConnected: false });
-          return;
-        }
+        if (!supabase) return;
+        set({ isInitialLoading: true });
         try {
           const [u, r, t, i, g, a, tr, l] = await Promise.all([
             supabase.from('users').select('*'),
             supabase.from('rooms').select('*').order('number'),
-            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(100),
+            supabase.from('tasks').select('*').order('id', { ascending: false }).limit(50),
             supabase.from('inventory').select('*'),
             supabase.from('guests').select('*').is('checked_out_at', null),
-            supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(20),
-            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(50),
+            supabase.from('announcements').select('*').order('created_at', { ascending: false }).limit(10),
+            supabase.from('transactions').select('*').order('date', { ascending: false }).limit(20),
             supabase.from('laundry').select('*')
           ]);
 
           set({
-            users: (u.data || []).map(x => ({ 
-              id: x.id, 
-              email: x.email, 
-              fullName: x.full_name, 
-              role: x.role as UserRole, 
-              password: x.password 
-            })),
+            users: (u.data || []).map(x => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role as UserRole, password: x.password })),
             rooms: (r.data || []).map(x => ({ 
-              id: x.id,
-              number: x.number,
-              floor: x.floor,
-              type: x.type as RoomType,
-              category: x.category as RoomCategory,
-              status: x.status as RoomStatus,
-              maxGuests: x.max_guests,
-              bedsCount: x.beds_count, 
-              hasMinibar: x.has_minibar, 
-              hasBalcony: x.has_balcony, 
-              icalUrl: x.ical_url 
+              id: x.id, number: x.number, floor: x.floor, type: x.type as RoomType,
+              category: x.category as RoomCategory, status: x.status as RoomStatus,
+              maxGuests: x.max_guests, bedsCount: x.beds_count, hasMinibar: x.has_minibar,
+              hasBalcony: x.has_balcony, icalUrl: x.ical_url 
             })),
             tasks: (t.data || []).map(x => ({ 
-              id: x.id, 
-              roomId: x.room_id, 
-              assignedTo: x.assigned_to, 
-              assignedByName: x.assigned_by_name, 
-              status: x.status as CleaningStatus, 
-              startedAt: x.started_at, 
-              completedAt: x.completed_at, 
-              durationMinutes: x.duration_minutes, 
-              deadline: x.deadline, 
-              notes: x.notes, 
-              checklist: x.checklist || {}, 
-              photos: x.photos || [], 
-              fatorMamaeVerified: x.fator_mamae_verified,
+              id: x.id, roomId: x.room_id, assignedTo: x.assigned_to, assignedByName: x.assigned_by_name,
+              status: x.status as CleaningStatus, startedAt: x.started_at, completedAt: x.completed_at,
+              durationMinutes: x.duration_minutes, deadline: x.deadline, notes: x.notes,
+              checklist: x.checklist || {}, photos: x.photos || [], fatorMamaeVerified: x.fator_mamae_verified,
               bedsToMake: x.beds_to_make || 0
             })),
-            inventory: (i.data || []).map(x => ({ 
-              id: x.id,
-              name: x.name,
-              category: x.category,
-              quantity: x.quantity,
-              minStock: x.min_stock, 
-              unitCost: x.unit_cost, 
-              price: x.price 
-            })),
-            guests: (g.data || []).map(x => ({ 
-              id: x.id, 
-              fullName: x.full_name, 
-              document: x.document, 
-              checkIn: x.check_in, 
-              checkOut: x.check_out, 
-              roomId: x.room_id, 
-              dailyRate: x.daily_rate, 
-              totalValue: x.total_value, 
-              paymentMethod: x.payment_method as PaymentMethod,
-              checkedOutAt: x.checked_out_at
-            })),
-            announcements: (a.data || []).map(x => ({ 
-              id: x.id,
-              authorName: x.author_name,
-              content: x.content,
-              createdAt: x.created_at,
-              priority: x.priority
-            })),
+            inventory: (i.data || []).map(x => ({ id: x.id, name: x.name, category: x.category, quantity: x.quantity, minStock: x.min_stock, unitCost: x.unit_cost, price: x.price })),
+            guests: (g.data || []).map(x => ({ id: x.id, fullName: x.full_name, document: x.document, checkIn: x.check_in, checkOut: x.check_out, roomId: x.room_id, dailyRate: x.daily_rate, totalValue: x.total_value, paymentMethod: x.payment_method as PaymentMethod, checkedOutAt: x.checked_out_at })),
+            announcements: (a.data || []).map(x => ({ id: x.id, authorName: x.author_name, content: x.content, createdAt: x.created_at, priority: x.priority })),
             transactions: (tr.data || []),
-            laundry: (l.data || []).map(x => ({ 
-              id: x.id, 
-              type: x.type, 
-              quantity: x.quantity, 
-              stage: x.stage as LaundryStage, 
-              roomOrigin: x.room_origin, 
-              lastUpdated: x.last_updated 
-            })),
-            isInitialLoading: false,
-            isSupabaseConnected: true
+            laundry: (l.data || []).map(x => ({ id: x.id, type: x.type, quantity: x.quantity, stage: x.stage as LaundryStage, roomOrigin: x.room_origin, lastUpdated: x.last_updated })),
+            isInitialLoading: false
           });
-        } catch (err) { 
-          console.error("Erro crítico na sincronização:", err);
+        } catch (e) { 
+          console.error("Sync Error:", e);
           set({ isInitialLoading: false }); 
         }
       },
@@ -215,26 +150,12 @@ export const useStore = create<AppState>()(
             .eq('password', password)
             .maybeSingle();
 
-          if (error || !data) {
-            console.error("Erro login:", error);
-            return false;
-          }
+          if (error || !data) return false;
 
-          set({ 
-            currentUser: { 
-              id: data.id, 
-              email: data.email, 
-              fullName: data.full_name, 
-              role: data.role as UserRole, 
-              password: data.password 
-            } 
-          });
+          set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role as UserRole, password: data.password } });
           await get().syncData();
           return true;
-        } catch (e) {
-          console.error("Falha no login:", e);
-          return false;
-        }
+        } catch { return false; }
       },
 
       logout: () => set({ currentUser: null }),
@@ -247,6 +168,28 @@ export const useStore = create<AppState>()(
         });
       },
 
+      updateRoomStatus: async (id, status) => {
+        if (supabase) await supabase.from('rooms').update({ status }).eq('id', id);
+        get().syncData();
+      },
+
+      createTask: async (data) => {
+        if (!supabase) return;
+        const room = get().rooms.find(r => r.id === data.roomId);
+        const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
+        await supabase.from('tasks').insert({
+          room_id: data.roomId,
+          assigned_to: data.assignedTo,
+          assigned_by_name: get().currentUser?.fullName,
+          status: 'pendente',
+          deadline: data.deadline,
+          notes: data.notes,
+          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {})
+        });
+        await supabase.from('rooms').update({ status: 'limpando' }).eq('id', data.roomId);
+        get().syncData();
+      },
+
       updateTask: async (id, updates) => {
         if (!supabase) return;
         const dbFields: any = {};
@@ -256,9 +199,6 @@ export const useStore = create<AppState>()(
         if (updates.startedAt) dbFields.started_at = updates.startedAt;
         if (updates.completedAt) dbFields.completed_at = updates.completedAt;
         if (updates.durationMinutes) dbFields.duration_minutes = updates.durationMinutes;
-        if (updates.fatorMamaeVerified !== undefined) dbFields.fator_mamae_verified = updates.fatorMamaeVerified;
-        if (updates.bedsToMake !== undefined) dbFields.beds_to_make = updates.bedsToMake;
-        
         await supabase.from('tasks').update(dbFields).eq('id', id);
         get().syncData();
       },
@@ -273,59 +213,19 @@ export const useStore = create<AppState>()(
         }
       },
 
-      updateRoomStatus: async (id, status) => {
-        if (supabase) await supabase.from('rooms').update({ status }).eq('id', id);
-        get().syncData();
-      },
-
-      addLaundry: async (item) => {
-        if (!supabase) return;
-        await supabase.from('laundry').insert({ 
-          id: `l-${Date.now()}`, 
-          type: item.type, 
-          quantity: item.quantity, 
-          stage: item.stage, 
-          room_origin: item.roomOrigin, 
-          last_updated: new Date().toISOString() 
-        });
-        get().syncData();
-      },
-
-      moveLaundry: async (id, stage) => {
-        if (supabase) await supabase.from('laundry').update({ stage, last_updated: new Date().toISOString() }).eq('id', id);
-        get().syncData();
-      },
-
-      updateInventory: async (id, qty) => {
-        if (!supabase) return;
-        const item = get().inventory.find(i => i.id === id);
-        if (item) {
-          await supabase.from('inventory').update({ quantity: Math.max(0, item.quantity + qty) }).eq('id', id);
-          get().syncData();
-        }
-      },
-
       checkIn: async (data) => {
         if (!supabase) return;
-        const id = `g-${Date.now()}`;
-        await supabase.from('guests').insert({ 
-          id, 
-          full_name: data.fullName, 
+        await supabase.from('guests').insert({
+          full_name: data.fullName,
           document: data.document,
           check_in: data.checkIn,
           check_out: data.checkOut,
-          room_id: data.roomId, 
-          daily_rate: data.dailyRate, 
-          total_value: data.totalValue, 
-          payment_method: data.paymentMethod 
+          room_id: data.roomId,
+          daily_rate: data.dailyRate,
+          total_value: data.totalValue,
+          payment_method: data.paymentMethod
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
-        await get().addTransaction({
-          type: 'INCOME',
-          category: 'RESERVATION',
-          amount: data.totalValue,
-          description: `Check-in: ${data.fullName}`
-        });
         get().syncData();
       },
 
@@ -339,87 +239,46 @@ export const useStore = create<AppState>()(
         }
       },
 
-      addUser: async (u) => { 
-        if (!supabase) return;
-        await supabase.from('users').insert({ 
-          id: `u-${Date.now()}`, 
-          full_name: u.fullName, 
-          email: u.email,
-          password: u.password,
-          role: u.role
-        }); 
-        get().syncData(); 
-      },
-      
-      removeUser: async (id) => { if (supabase) await supabase.from('users').delete().eq('id', id); get().syncData(); },
-      updateCurrentUser: (u) => set(s => ({ currentUser: s.currentUser ? { ...s.currentUser, ...u } : null })),
-      updateUserPassword: async (id, p) => { if (supabase) await supabase.from('users').update({ password: p }).eq('id', id); get().syncData(); },
-      
-      addAnnouncement: async (c, p) => { 
-        if (!supabase) return;
-        await supabase.from('announcements').insert({ 
-          id: `a-${Date.now()}`, 
-          author_name: get().currentUser?.fullName, 
-          content: c, 
-          priority: p 
-        }); 
-        get().syncData(); 
-      },
-
-      addTransaction: async (d) => { 
-        if (!supabase) return;
-        await supabase.from('transactions').insert({ 
-          id: `tr-${Date.now()}`, 
-          type: d.type,
-          category: d.category,
-          amount: d.amount,
-          description: d.description,
-          date: new Date().toISOString()
-        }); 
-        get().syncData(); 
-      },
-
-      updateRoomICal: async (id, url) => { if (supabase) await supabase.from('rooms').update({ ical_url: url }).eq('id', id); get().syncData(); },
-      syncICal: async () => get().syncData(),
-      
-      createTask: async (data) => {
-        if (!supabase) return;
-        const id = `t-${Date.now()}`;
-        const room = get().rooms.find(r => r.id === data.roomId);
-        const template = CHECKLIST_TEMPLATES[room?.id!] || CHECKLIST_TEMPLATES[room?.category!] || CHECKLIST_TEMPLATES[RoomCategory.GUEST_ROOM];
-        
-        await supabase.from('tasks').insert({ 
-          id, 
-          room_id: data.roomId, 
-          assigned_to: data.assignedTo, 
-          assigned_by_name: get().currentUser?.fullName, 
-          status: 'pendente', 
-          deadline: data.deadline, 
-          notes: data.notes, 
-          beds_to_make: data.bedsToMake || 0,
-          checklist: template.reduce((acc, cur) => ({ ...acc, [cur]: false }), {}) 
-        });
-        
-        await supabase.from('rooms').update({ status: 'limpando' }).eq('id', data.roomId);
+      addAnnouncement: async (c, p) => {
+        if (supabase) await supabase.from('announcements').insert({ author_name: get().currentUser?.fullName, content: c, priority: p });
         get().syncData();
       },
 
-      addInventory: async (item) => { 
-        if (!supabase) return;
-        await supabase.from('inventory').insert({ 
-          id: `i-${Date.now()}`, 
-          name: item.name,
-          category: item.category,
-          quantity: item.quantity,
-          min_stock: item.minStock,
-          unit_cost: item.unitCost,
-          price: item.price
-        }); 
-        get().syncData(); 
+      addTransaction: async (d) => {
+        if (supabase) await supabase.from('transactions').insert(d);
+        get().syncData();
       },
+
+      addLaundry: async (item) => {
+        if (supabase) await supabase.from('laundry').insert({ type: item.type, quantity: item.quantity, stage: item.stage, room_origin: item.roomOrigin, last_updated: new Date().toISOString() });
+        get().syncData();
+      },
+
+      moveLaundry: async (id, stage) => {
+        if (supabase) await supabase.from('laundry').update({ stage, last_updated: new Date().toISOString() }).eq('id', id);
+        get().syncData();
+      },
+
+      updateInventory: async (id, qty) => {
+        const item = get().inventory.find(i => i.id === id);
+        if (item && supabase) await supabase.from('inventory').update({ quantity: item.quantity + qty }).eq('id', id);
+        get().syncData();
+      },
+
+      addInventory: async (item) => {
+        if (supabase) await supabase.from('inventory').insert(item);
+        get().syncData();
+      },
+
+      addUser: async (u) => { if (supabase) await supabase.from('users').insert({ full_name: u.fullName, email: u.email, password: u.password, role: u.role }); get().syncData(); },
+      removeUser: async (id) => { if (supabase) await supabase.from('users').delete().eq('id', id); get().syncData(); },
+      updateCurrentUser: (u) => set(s => ({ currentUser: s.currentUser ? { ...s.currentUser, ...u } : null })),
+      updateUserPassword: async (id, p) => { if (supabase) await supabase.from('users').update({ password: p }).eq('id', id); get().syncData(); },
+      updateRoomICal: async (id, url) => { if (supabase) await supabase.from('rooms').update({ ical_url: url }).eq('id', id); get().syncData(); },
+      syncICal: async (id) => get().syncData(),
     }),
     {
-      name: 'hospedapro-v1-stable',
+      name: 'hospedapro-storage-v2',
       storage: createJSONStorage(() => localStorage),
     }
   )

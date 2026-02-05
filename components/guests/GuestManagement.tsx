@@ -62,7 +62,8 @@ const GuestManagement: React.FC = () => {
     reader.onloadend = async () => {
       try {
         const base64Data = (reader.result as string).split(',')[1];
-        const ai = new GoogleGenAI({ apiKey: (window.process?.env as any)?.API_KEY });
+        // Correct initialization using process.env.API_KEY directly as per Gemini API guidelines.
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
         const response = await ai.models.generateContent({
           model: 'gemini-3-flash-preview',
           contents: {

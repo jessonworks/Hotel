@@ -17,10 +17,10 @@ import TeamManagement from './components/auth/TeamManagement';
 import { Hotel, Loader2 } from 'lucide-react';
 
 const App: React.FC = () => {
-  const { currentUser, checkConnection, subscribeToChanges, syncData, isInitialLoading } = useStore();
+  const { currentUser, checkConnection, subscribeToChanges, syncData, isInitialLoading, forceDemoLogin } = useStore();
 
   useEffect(() => {
-    // Sincronização inicial e realtime
+    // Tenta sincronizar se houver usuário
     if (currentUser) {
       syncData();
       const unsubscribe = subscribeToChanges();
@@ -30,15 +30,15 @@ const App: React.FC = () => {
 
   useEffect(() => {
     checkConnection();
-    const interval = setInterval(() => checkConnection(), 60000);
+    const interval = setInterval(() => checkConnection(), 30000);
     return () => clearInterval(interval);
   }, [checkConnection]);
 
+  // Se não houver usuário e estiver carregando por muito tempo, ou se o usuário explicitamente pediu acesso direto
   if (!currentUser) {
     return <Login />;
   }
 
-  // Tela de Carregamento Inicial
   if (isInitialLoading) {
     return (
       <div className="min-h-screen bg-[#0F172A] flex flex-col items-center justify-center p-4">
@@ -49,6 +49,12 @@ const App: React.FC = () => {
           <Loader2 className="animate-spin text-blue-400" size={24} />
           Sincronizando Dados...
         </div>
+        <button 
+          onClick={() => forceDemoLogin()}
+          className="mt-8 text-blue-400 text-[10px] font-black underline uppercase tracking-widest"
+        >
+          Pular Sincronização e Entrar Direto
+        </button>
       </div>
     );
   }

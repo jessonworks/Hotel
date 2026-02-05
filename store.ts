@@ -9,10 +9,19 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || '';
+// Acesso seguro às variáveis de ambiente
+const getEnv = (key: string) => {
+  try {
+    return process.env[key] || '';
+  } catch {
+    return '';
+  }
+};
 
-export const supabase = SUPABASE_URL && SUPABASE_ANON_KEY 
+const SUPABASE_URL = getEnv('SUPABASE_URL');
+const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
+
+export const supabase = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
 
@@ -81,41 +90,54 @@ export const useStore = create<AppState>()(
       connectionError: null,
 
       checkConnection: async () => {
-        if (!supabase) return;
+        if (!supabase) {
+          set({ isSupabaseConnected: false, connectionError: 'Supabase não configurado' });
+          return;
+        }
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
           set({ isSupabaseConnected: !error, connectionError: error?.message || null });
-        } catch (e: any) { set({ isSupabaseConnected: false, connectionError: e.message }); }
+        } catch (e: any) { 
+          set({ isSupabaseConnected: false, connectionError: e.message }); 
+        }
       },
 
       subscribeToChanges: () => {
         if (!supabase) return () => {};
         
-        const channel = supabase
-          .channel('db-changes')
-          .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-            get().syncData();
-          })
-          .subscribe();
+        try {
+          const channel = supabase
+            .channel('db-changes')
+            .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+              get().syncData();
+            })
+            .subscribe();
 
-        return () => {
-          supabase.removeChannel(channel);
-        };
+          return () => {
+            supabase.removeChannel(channel);
+          };
+        } catch (e) {
+          console.error("Erro ao assinar mudanças realtime:", e);
+          return () => {};
+        }
       },
 
       syncData: async () => {
-        if (!supabase) return;
+        if (!supabase) {
+          set({ isInitialLoading: false });
+          return;
+        }
         
         const fetchTable = async (table: string, query: any) => {
           try {
             const { data, error } = await query;
             if (error) {
-              console.warn(`Erro na tabela ${table}:`, error.message);
+              console.warn(`Aviso na tabela ${table}:`, error.message);
               return null;
             }
             return data;
           } catch (e) {
-            console.error(`Falha fatal na tabela ${table}:`, e);
+            console.error(`Falha na tabela ${table}:`, e);
             return null;
           }
         };
@@ -176,13 +198,21 @@ export const useStore = create<AppState>()(
 
           set({ isInitialLoading: false });
         } catch (e) { 
-          console.error("Sync Error Global:", e);
+          console.error("Erro Global de Sincronização:", e);
           set({ isInitialLoading: false });
         }
       },
 
       login: async (email, password) => {
-        if (!supabase) return false;
+        if (!supabase) {
+          // Fallback para login offline se for necessário testar a UI
+          if (email === 'admin@admin.com' && password === 'admin') {
+             const user: User = { id: 'u1', email: 'admin@admin.com', fullName: 'Administrador Local', role: UserRole.ADMIN };
+             set({ currentUser: user, isInitialLoading: false });
+             return true;
+          }
+          return false;
+        }
         try {
           const { data, error } = await supabase.from('users').select('*')
             .ilike('email', email.trim())
@@ -195,7 +225,9 @@ export const useStore = create<AppState>()(
             await get().syncData();
             return true;
           }
-        } catch (e) { console.error("Login Error:", e); }
+        } catch (e) { 
+          console.error("Erro no Login:", e); 
+        }
         return false;
       },
 
@@ -215,7 +247,6 @@ export const useStore = create<AppState>()(
       uploadPhoto: async (file, path) => {
         if (!supabase) return null;
         try {
-          // Ajustado para 'cleaning-photos' (minúsculas) conforme sua tela do Supabase
           const { data, error } = await supabase.storage
             .from('cleaning-photos')
             .upload(path, file, { 
@@ -224,14 +255,14 @@ export const useStore = create<AppState>()(
             });
 
           if (error) {
-            console.error("Erro upload Supabase:", error);
+            console.error("Erro no upload do Supabase:", error.message);
             return null;
           }
           
           const { data: { publicUrl } } = supabase.storage.from('cleaning-photos').getPublicUrl(data.path);
           return publicUrl;
         } catch (e) {
-          console.error("Falha upload:", e);
+          console.error("Falha fatal no upload:", e);
           return null;
         }
       },
@@ -252,8 +283,12 @@ export const useStore = create<AppState>()(
         if (updates.durationMinutes !== undefined) dbFields.duration_minutes = updates.durationMinutes;
         if (updates.fatorMamaeVerified !== undefined) dbFields.fator_mamae_verified = updates.fatorMamaeVerified;
 
-        const { error } = await supabase.from('tasks').update(dbFields).eq('id', taskId);
-        if (error) await get().syncData(); 
+        try {
+          const { error } = await supabase.from('tasks').update(dbFields).eq('id', taskId);
+          if (error) await get().syncData(); 
+        } catch (e) {
+          await get().syncData();
+        }
       },
 
       approveTask: async (taskId) => {
@@ -338,7 +373,7 @@ export const useStore = create<AppState>()(
         await supabase.from('guests').insert({
           id, full_name: data.fullName, document: data.document, check_in: data.check_in,
           check_out: data.check_out, room_id: data.roomId, daily_rate: data.daily_rate,
-          total_value: data.total_value, payment_method: data.payment_method
+          total_value: data.totalValue, payment_method: data.paymentMethod
         });
         await supabase.from('rooms').update({ status: 'ocupado' }).eq('id', data.roomId);
         await get().syncData();

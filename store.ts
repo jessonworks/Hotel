@@ -9,16 +9,14 @@ import {
 } from './types';
 import { CHECKLIST_TEMPLATES } from './constants';
 
-// Função robusta para capturar variáveis de ambiente em qualquer contexto (Vite, Vercel, Node)
-const getEnv = (key: string): string => {
-  if (typeof process !== 'undefined' && process.env && process.env[key]) return process.env[key] as string;
-  if (typeof window !== 'undefined' && (window as any).process?.env?.[key]) return (window as any).process.env[key];
-  return '';
-};
+/** 
+ * CRÍTICO: No Vite, o 'define' substitui tokens literais. 
+ * O uso de funções como getEnv('KEY') falha porque o Vite não as processa.
+ */
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY || "";
 
-const SUPABASE_URL = getEnv('SUPABASE_URL');
-const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
-
+// Inicialização do cliente Supabase
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
@@ -82,7 +80,7 @@ export const useStore = create<AppState>()(
       inventory: [],
       announcements: [],
       transactions: [],
-      isSupabaseConnected: false,
+      isSupabaseConnected: !!supabase,
       isInitialLoading: true,
       connectionError: null,
 
@@ -94,7 +92,9 @@ export const useStore = create<AppState>()(
         try {
           const { error } = await supabase.from('users').select('id').limit(1);
           set({ isSupabaseConnected: !error });
-        } catch { set({ isSupabaseConnected: false }); }
+        } catch { 
+          set({ isSupabaseConnected: false }); 
+        }
       },
 
       subscribeToChanges: () => {
@@ -107,7 +107,7 @@ export const useStore = create<AppState>()(
 
       syncData: async () => {
         if (!supabase) {
-          set({ isInitialLoading: false });
+          set({ isInitialLoading: false, isSupabaseConnected: false });
           return;
         }
         try {
@@ -123,8 +123,20 @@ export const useStore = create<AppState>()(
           ]);
 
           set({
-            users: (u.data || []).map(x => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role, password: x.password })),
-            rooms: (r.data || []).map(x => ({ ...x, bedsCount: x.beds_count, hasMinibar: x.has_minibar, hasBalcony: x.has_balcony, icalUrl: x.ical_url })),
+            users: (u.data || []).map(x => ({ 
+              id: x.id, 
+              email: x.email, 
+              fullName: x.full_name, 
+              role: x.role, 
+              password: x.password 
+            })),
+            rooms: (r.data || []).map(x => ({ 
+              ...x, 
+              bedsCount: x.beds_count, 
+              hasMinibar: x.has_minibar, 
+              hasBalcony: x.has_balcony, 
+              icalUrl: x.ical_url 
+            })),
             tasks: (t.data || []).map(x => ({ 
               id: x.id, 
               roomId: x.room_id, 
@@ -141,7 +153,12 @@ export const useStore = create<AppState>()(
               fatorMamaeVerified: x.fator_mamae_verified,
               bedsToMake: x.beds_to_make || 0
             })),
-            inventory: (i.data || []).map(x => ({ ...x, minStock: x.min_stock, unitCost: x.unit_cost, price: x.price })),
+            inventory: (i.data || []).map(x => ({ 
+              ...x, 
+              minStock: x.min_stock, 
+              unitCost: x.unit_cost, 
+              price: x.price 
+            })),
             guests: (g.data || []).map(x => ({ 
               id: x.id, 
               fullName: x.full_name, 
@@ -154,7 +171,11 @@ export const useStore = create<AppState>()(
               paymentMethod: x.payment_method,
               checkedOutAt: x.checked_out_at
             })),
-            announcements: (a.data || []).map(x => ({ ...x, authorName: x.author_name, createdAt: x.created_at })),
+            announcements: (a.data || []).map(x => ({ 
+              ...x, 
+              authorName: x.author_name, 
+              createdAt: x.created_at 
+            })),
             transactions: (tr.data || []),
             laundry: (l.data || []).map(x => ({ 
               id: x.id, 
@@ -168,18 +189,45 @@ export const useStore = create<AppState>()(
             isSupabaseConnected: true
           });
         } catch (err) { 
-          console.error("Sync error:", err);
+          console.error("Erro na sincronização:", err);
           set({ isInitialLoading: false }); 
         }
       },
 
       login: async (email, password) => {
-        if (!supabase) return false;
-        const { data } = await supabase.from('users').select('*').ilike('email', email.trim()).eq('password', password).maybeSingle();
-        if (data) {
-          set({ currentUser: { id: data.id, email: data.email, fullName: data.full_name, role: data.role as UserRole, password: data.password } });
-          get().syncData();
-          return true;
+        if (!supabase) {
+          console.error("Supabase não configurado. Verifique as chaves na Vercel.");
+          return false;
+        }
+        try {
+          // Busca exata respeitando o SQL: coluna full_name mapeada para o objeto local
+          const { data, error } = await supabase
+            .from('users')
+            .select('*')
+            .ilike('email', email.trim())
+            .eq('password', password)
+            .maybeSingle();
+
+          if (error) {
+            console.error("Erro no login:", error);
+            return false;
+          }
+
+          if (data) {
+            set({ 
+              currentUser: { 
+                id: data.id, 
+                email: data.email, 
+                fullName: data.full_name, 
+                role: data.role as UserRole, 
+                password: data.password 
+              } 
+            });
+            get().syncData();
+            return true;
+          }
+        } catch (e) {
+          console.error("Exceção no login:", e);
         }
         return false;
       },
@@ -187,6 +235,7 @@ export const useStore = create<AppState>()(
       logout: () => set({ currentUser: null }),
 
       uploadPhoto: async (file) => {
+        // Método estável Base64 para garantir que as fotos do Fator Mamãe funcionem sempre
         return new Promise((resolve) => {
           const reader = new FileReader();
           reader.onloadend = () => resolve(reader.result as string);
@@ -272,7 +321,7 @@ export const useStore = create<AppState>()(
           type: 'INCOME',
           category: 'RESERVATION',
           amount: data.totalValue,
-          description: `Reserva - ${data.fullName}`
+          description: `Check-in: ${data.fullName}`
         });
         get().syncData();
       },
@@ -371,7 +420,7 @@ export const useStore = create<AppState>()(
       },
     }),
     {
-      name: 'hospedapro-stable-session-v3',
+      name: 'hospedapro-stable-session-v4',
       storage: createJSONStorage(() => localStorage),
     }
   )

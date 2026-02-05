@@ -11,15 +11,21 @@ import { CHECKLIST_TEMPLATES } from './constants';
 
 const getEnv = (key: string): string => {
   try {
-    return (window.process?.env as any)?.[key] || (process.env as any)?.[key] || '';
+    // Tenta ler de várias fontes comuns de ambiente em sandboxes
+    return (
+      (window.process?.env as any)?.[key] || 
+      (typeof process !== 'undefined' ? (process.env as any)?.[key] : '') ||
+      ''
+    );
   } catch {
     return '';
   }
 };
 
-const SUPABASE_URL = getEnv('SUPABASE_URL');
-const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY');
+const SUPABASE_URL = getEnv('SUPABASE_URL') || getEnv('VITE_SUPABASE_URL');
+const SUPABASE_ANON_KEY = getEnv('SUPABASE_ANON_KEY') || getEnv('VITE_SUPABASE_ANON_KEY');
 
+// Só cria o cliente se tivermos as chaves
 export const supabase: SupabaseClient | null = (SUPABASE_URL && SUPABASE_ANON_KEY) 
   ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY) 
   : null;
@@ -89,7 +95,7 @@ export const useStore = create<AppState>()(
 
       checkConnection: async () => {
         if (!supabase) {
-          set({ isSupabaseConnected: false, connectionError: 'Supabase URL/Key não configurada' });
+          set({ isSupabaseConnected: false, connectionError: 'Configurações do Supabase ausentes' });
           return;
         }
         try {
@@ -134,7 +140,7 @@ export const useStore = create<AppState>()(
 
           if (u.data) set({ users: u.data.map(x => ({ id: x.id, email: x.email, fullName: x.full_name, role: x.role, password: x.password })) });
           if (r.data) set({ rooms: r.data.map(x => ({ id: x.id, number: x.number, floor: x.floor, status: x.status, category: x.category, type: x.type || 'standard', maxGuests: x.max_guests || 2, bedsCount: x.beds_count || 1, hasMinibar: !!x.has_minibar, hasBalcony: !!x.has_balcony, icalUrl: x.ical_url })) });
-          if (l.data) set({ laundry: l.data.map(x => ({ id: x.id, type: x.type, quantity: x.quantity, stage: x.stage, roomOrigin: x.room_origin, lastUpdated: x.last_updated })) });
+          if (l.data) set({ laundry: l.data.map(x => ({ id: x.id, type: x.type, quantity: x.quantity, stage: x.stage, room_origin: x.room_origin, lastUpdated: x.last_updated })) });
           if (t.data) set({ tasks: t.data.map(x => ({ id: x.id, roomId: x.room_id, assignedTo: x.assigned_to, assignedByName: x.assigned_by_name, status: x.status, startedAt: x.started_at, completedAt: x.completed_at, durationMinutes: x.duration_minutes, deadline: x.deadline, notes: x.notes, checklist: x.checklist || {}, photos: x.photos || [], fatorMamaeVerified: !!x.fator_mamae_verified, bedsToMake: x.beds_to_make || 0 })) });
           if (i.data) set({ inventory: i.data.map(x => ({ id: x.id, name: x.name, category: x.category, quantity: x.quantity, minStock: x.min_stock, price: x.price || 0, unitCost: x.unit_cost || 0 })) });
           if (g.data) set({ guests: g.data.map(x => ({ id: x.id, fullName: x.full_name, document: x.document, checkIn: x.check_in, checkOut: x.check_out, roomId: x.room_id, dailyRate: x.daily_rate, totalValue: x.total_value, paymentMethod: x.payment_method })) });
@@ -150,7 +156,6 @@ export const useStore = create<AppState>()(
 
       login: async (email, password) => {
         if (!supabase) {
-          // Fallback Admin
           if (email === 'admin@admin.com' && password === 'admin') {
             set({ currentUser: { id: 'offline-admin', email, fullName: 'Administrador Local', role: UserRole.ADMIN } });
             return true;

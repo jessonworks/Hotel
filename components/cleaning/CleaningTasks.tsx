@@ -7,29 +7,6 @@ import {
 } from 'lucide-react';
 import { FATOR_MAMAE_REQUIREMENTS, WHATSAPP_NUMBER } from '../../constants';
 
-// Função de compressão de imagem de alta performance
-const compressImageToBlob = (base64Str: string, maxWidth = 1000, maxHeight = 800): Promise<Blob> => {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.src = base64Str;
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      if (width > height) {
-        if (width > maxWidth) { height *= maxWidth / width; width = maxWidth; }
-      } else {
-        if (height > maxHeight) { width *= maxHeight / height; height = maxHeight; }
-      }
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx?.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => { if (blob) resolve(blob!); }, 'image/jpeg', 0.6);
-    };
-  });
-};
-
 const CleaningTasks: React.FC = () => {
   const { tasks, rooms, updateTask, approveTask, uploadPhoto, currentUser, users } = useStore();
   const [activeTaskId, setActiveTaskId] = useState<string | null>(null);
@@ -39,8 +16,9 @@ const CleaningTasks: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [capturingFor, setCapturingFor] = useState<{ id: string, category: 'START' | 'BEFORE' | 'AFTER' | 'MAMAE' } | null>(null);
   
-  // Estado local para fotos em upload
-  const [draftPhotos, setDraftPhotos] = useState<Record<string, {url: string, uploading: boolean}>>({});
+  const activeTask = useMemo(() => tasks.find(t => t.id === activeTaskId), [tasks, activeTaskId]);
+  const auditTask = useMemo(() => tasks.find(t => t.id === auditTaskId), [tasks, auditTaskId]);
+  const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
 
   const isAdminOrManager = currentUser?.role === UserRole.ADMIN || currentUser?.role === UserRole.MANAGER;
   
@@ -50,24 +28,6 @@ const CleaningTasks: React.FC = () => {
   );
 
   const pendingAudits = tasks.filter(t => t.status === CleaningStatus.AGUARDANDO_APROVACAO);
-  const teamActivity = tasks.filter(t => t.status === CleaningStatus.PENDENTE || t.status === CleaningStatus.EM_PROGRESSO);
-
-  const activeTask = useMemo(() => tasks.find(t => t.id === activeTaskId), [tasks, activeTaskId]);
-  const auditTask = useMemo(() => tasks.find(t => t.id === auditTaskId), [tasks, auditTaskId]);
-  const room = activeTask ? rooms.find(r => r.id === activeTask.roomId) : null;
-
-  // Sincroniza fotos existentes do banco para o estado de rascunho
-  useEffect(() => {
-    if (activeTask) {
-      const existing: Record<string, {url: string, uploading: boolean}> = {};
-      (activeTask.photos as any[])?.forEach((p: any) => {
-        if (p && p.type) existing[p.type] = { url: p.url, uploading: false };
-      });
-      setDraftPhotos(existing);
-    } else {
-      setDraftPhotos({});
-    }
-  }, [activeTaskId, activeTask]);
 
   useEffect(() => {
     let interval: any;
@@ -88,40 +48,24 @@ const CleaningTasks: React.FC = () => {
       const categoryId = capturingFor.id;
       const categoryLabel = capturingFor.category;
 
-      setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: '', uploading: true } }));
-
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        try {
-          const compressedBlob = await compressImageToBlob(reader.result as string);
-          // Path organizado: ID_TAREFA/TIPO_FOTO_TIMSTAMP.jpg
-          const fileName = `${activeTask.id}/${categoryId}_${Date.now()}.jpg`;
-          const publicUrl = await uploadPhoto(compressedBlob, fileName);
+      try {
+        const base64Data = await uploadPhoto(file, ""); // Agora retorna base64 do store.ts
+        if (base64Data) {
+          const currentPhotos = (activeTask.photos || []) as any[];
+          const otherPhotos = currentPhotos.filter((p: any) => p.type !== categoryId);
+          const newPhoto = { type: categoryId, url: base64Data, category: categoryLabel };
           
-          if (publicUrl) {
-            setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: publicUrl, uploading: false } }));
-            
-            const currentPhotos = (activeTask.photos || []) as any[];
-            const otherPhotos = currentPhotos.filter((p: any) => p.type !== categoryId);
-            const newPhoto = { type: categoryId, url: publicUrl, category: categoryLabel };
-            
-            const updates: any = { photos: [...otherPhotos, newPhoto] };
-            if (categoryLabel === 'START') {
-              updates.status = CleaningStatus.EM_PROGRESSO;
-              updates.startedAt = new Date().toISOString();
-            }
-            await updateTask(activeTask.id, updates);
-          } else {
-            setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: '', uploading: false } }));
-            alert("⚠️ ERRO NO UPLOAD: Verifique se o bucket 'cleaning-photos' foi criado no Supabase Storage e está como Público.");
+          const updates: any = { photos: [...otherPhotos, newPhoto] };
+          if (categoryLabel === 'START') {
+            updates.status = CleaningStatus.EM_PROGRESSO;
+            updates.startedAt = new Date().toISOString();
           }
-        } catch (err) {
-          console.error("Erro no processamento da imagem:", err);
-          setDraftPhotos(prev => ({ ...prev, [categoryId]: { url: '', uploading: false } }));
+          await updateTask(activeTask.id, updates);
         }
-        setCapturingFor(null);
-      };
-      reader.readAsDataURL(file);
+      } catch (err) {
+        console.error("Erro ao processar foto:", err);
+      }
+      setCapturingFor(null);
     }
   };
 
@@ -130,22 +74,11 @@ const CleaningTasks: React.FC = () => {
     setIsProcessing(true);
     try {
       const finalDuration = Math.max(1, Math.floor(elapsed / 60));
-      
-      // Fix: Add explicit type to Object.entries to resolve "Property 'url' does not exist on type 'unknown'"
-      const finalPhotos = (Object.entries(draftPhotos) as [string, {url: string, uploading: boolean}][])
-        .filter(([_, data]) => data.url)
-        .map(([type, data]) => ({
-          type,
-          url: data.url,
-          category: 'MAMAE' as const
-        }));
-
       await updateTask(activeTask.id, { 
         status: CleaningStatus.AGUARDANDO_APROVACAO,
         completedAt: new Date().toISOString(),
         durationMinutes: finalDuration,
-        fatorMamaeVerified: true,
-        photos: finalPhotos
+        fatorMamaeVerified: true
       });
       
       const message = `🚨 *RELATÓRIO HOSPEDAPRO*\nUnidade: ${room?.number}\nEquipe: ${currentUser?.fullName}\nTempo: ${Math.floor(elapsed/60)}m\nStatus: Conferência Pendente ✅`;
@@ -155,14 +88,12 @@ const CleaningTasks: React.FC = () => {
       setElapsed(0);
     } catch (e) {
       console.error(e);
-      alert("Erro ao finalizar tarefa.");
     } finally {
       setIsProcessing(false);
     }
   };
 
   const allChecksDone = activeTask ? Object.values(activeTask.checklist).every(v => v) : false;
-  const anyUploading = Object.values(draftPhotos).some((p: any) => p.uploading);
 
   return (
     <div className="max-w-4xl mx-auto space-y-4 pb-32 px-2 animate-in fade-in duration-500">
@@ -170,36 +101,32 @@ const CleaningTasks: React.FC = () => {
       
       {!activeTask ? (
         <div className="space-y-6">
-          {isAdminOrManager && (
-            <>
-              {pendingAudits.length > 0 && (
-                <section className="space-y-3">
-                  <h2 className="text-lg font-black text-slate-900 uppercase flex items-center gap-2"><CheckCircle2 className="text-emerald-600" size={18}/> Auditoria Pendente</h2>
-                  <div className="grid gap-3">
-                    {pendingAudits.map(task => (
-                      <div key={task.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex justify-between items-center shadow-sm">
-                        <div className="flex items-center gap-3">
-                          <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black">{rooms.find(r => r.id === task.roomId)?.number}</div>
-                          <div>
-                            <p className="text-xs font-black text-slate-800">{users.find(u => u.id === task.assignedTo)?.fullName}</p>
-                            <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{task.durationMinutes} min de trabalho</p>
-                          </div>
-                        </div>
-                        <button onClick={() => setAuditTaskId(task.id)} className="p-3 bg-slate-900 text-white rounded-xl active:scale-95 shadow-lg"><Eye size={16}/></button>
+          {isAdminOrManager && pendingAudits.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="text-lg font-black text-slate-900 uppercase flex items-center gap-2"><CheckCircle2 className="text-emerald-600" size={18}/> Auditoria Pendente</h2>
+              <div className="grid gap-3">
+                {pendingAudits.map(task => (
+                  <div key={task.id} className="bg-white border border-slate-200 rounded-2xl p-4 flex justify-between items-center shadow-sm">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-600 text-white rounded-xl flex items-center justify-center font-black">{rooms.find(r => r.id === task.roomId)?.number}</div>
+                      <div>
+                        <p className="text-xs font-black text-slate-800">{users.find(u => u.id === task.assignedTo)?.fullName}</p>
+                        <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{task.durationMinutes} min</p>
                       </div>
-                    ))}
+                    </div>
+                    <button onClick={() => setAuditTaskId(task.id)} className="p-3 bg-slate-900 text-white rounded-xl active:scale-95 shadow-lg"><Eye size={16}/></button>
                   </div>
-                </section>
-              )}
-            </>
+                ))}
+              </div>
+            </section>
           )}
 
           <section className="space-y-4">
-            <h2 className="text-xl font-black text-slate-900 px-2">Minhas Unidades Designadas</h2>
+            <h2 className="text-xl font-black text-slate-900 px-2">Minhas Unidades</h2>
             {myTasks.length === 0 ? (
               <div className="bg-white rounded-[2rem] border-2 border-dashed border-slate-200 p-12 text-center text-slate-400">
                 <CheckCircle2 size={40} className="mx-auto mb-2 opacity-20" />
-                <p className="font-black text-[10px] uppercase tracking-widest">Nada para fazer agora.</p>
+                <p className="font-black text-[10px] uppercase tracking-widest">Nada pendente no momento.</p>
               </div>
             ) : (
               <div className="grid gap-4">
@@ -213,15 +140,12 @@ const CleaningTasks: React.FC = () => {
                           <h3 className="text-4xl font-black text-slate-900">{r?.number}</h3>
                           <p className="text-[10px] font-black text-rose-500 uppercase flex items-center gap-1 mt-1"><Clock size={12}/> Prazo: {task.deadline || 'Imediato'}</p>
                         </div>
-                        <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest ${isNew ? 'bg-amber-100 text-amber-600' : 'bg-blue-600 text-white animate-pulse'}`}>
-                          {isNew ? 'Pendente' : 'Limpando'}
-                        </div>
                       </div>
                       <button 
-                        onClick={() => isNew ? (setCapturingFor({id:'start_audit', category:'START'}), setActiveTaskId(task.id), setTimeout(()=>fileInputRef.current?.click(),100)) : setActiveTaskId(task.id)}
+                        onClick={() => isNew ? (setCapturingFor({id:'start', category:'START'}), setActiveTaskId(task.id), setTimeout(()=>fileInputRef.current?.click(),100)) : setActiveTaskId(task.id)}
                         className="w-full py-4 bg-slate-900 text-white font-black rounded-2xl flex items-center justify-center gap-3 active:scale-95 uppercase text-xs tracking-widest shadow-xl"
                       >
-                        {isNew ? <><Camera size={18}/> BATER FOTO E INICIAR</> : <><Play size={18}/> CONTINUAR CHECKLIST</>}
+                        {isNew ? <><Camera size={18}/> INICIAR AGORA</> : <><Play size={18}/> CONTINUAR CHECKLIST</>}
                       </button>
                     </div>
                   );
@@ -231,15 +155,11 @@ const CleaningTasks: React.FC = () => {
           </section>
         </div>
       ) : (
-        <div className="fixed inset-0 z-[10000] flex flex-col bg-white h-[100dvh] overflow-hidden animate-in slide-in-from-bottom-10">
-          {/* HEADER SUPERIOR FIXO */}
+        <div className="fixed inset-0 z-[10000] flex flex-col bg-white h-[100dvh] overflow-hidden">
           <div className="bg-slate-900 p-4 pt-10 text-white shrink-0 flex items-center justify-between shadow-2xl">
-            <button onClick={() => setActiveTaskId(null)} className="p-2 hover:bg-white/10 rounded-full flex items-center gap-2">
-              <ChevronLeft size={24} />
-              <span className="font-black text-xs uppercase tracking-widest">Voltar</span>
-            </button>
+            <button onClick={() => setActiveTaskId(null)} className="p-2 bg-white/10 rounded-full"><ChevronLeft size={24} /></button>
             <div className="text-center">
-              <h2 className="text-xl font-black tracking-tighter leading-none">UNIDADE {room?.number}</h2>
+              <h2 className="text-xl font-black tracking-tighter">UNIDADE {room?.number}</h2>
               <div className="text-emerald-400 font-black text-xs flex items-center justify-center gap-1 mt-1">
                 <Timer size={14} /> {Math.floor(elapsed/60)}:{(elapsed%60).toString().padStart(2,'0')}
               </div>
@@ -247,7 +167,6 @@ const CleaningTasks: React.FC = () => {
             <button onClick={() => setActiveTaskId(null)} className="p-2 bg-white/10 rounded-full"><X size={20}/></button>
           </div>
 
-          {/* CONTEÚDO SCROLLÁVEL */}
           <div className="flex-1 overflow-y-auto p-4 space-y-8 pb-10 bg-slate-50">
             {activeTask.notes && (
               <div className="bg-amber-50 p-4 rounded-2xl border border-amber-100 flex gap-3 shadow-sm">
@@ -257,12 +176,10 @@ const CleaningTasks: React.FC = () => {
             )}
 
             <section className="space-y-4">
-              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 px-1">
-                <ClipboardCheck size={18} className="text-blue-600"/> Checklist Obrigatório
-              </h3>
+              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 px-1">Checklist Obrigatório</h3>
               <div className="grid gap-3">
                 {Object.keys(activeTask.checklist).map(item => (
-                  <label key={item} className={`flex items-center gap-4 p-5 rounded-2xl border-2 transition-all active:scale-[0.98] cursor-pointer shadow-sm ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-500 text-emerald-900' : 'bg-white border-slate-200 text-slate-600'}`}>
+                  <label key={item} className={`flex items-center gap-4 p-5 rounded-2xl border-2 transition-all cursor-pointer shadow-sm ${activeTask.checklist[item] ? 'bg-emerald-50 border-emerald-500 text-emerald-900' : 'bg-white border-slate-200 text-slate-600'}`}>
                     <input 
                       type="checkbox" 
                       checked={activeTask.checklist[item]} 
@@ -276,24 +193,17 @@ const CleaningTasks: React.FC = () => {
             </section>
 
             <section className="space-y-4">
-              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 px-1">
-                <ShieldCheck size={18} className="text-amber-500"/> Fator Mamãe (Nuvem)
-              </h3>
+              <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2 px-1">Evidências Fator Mamãe</h3>
               <div className="grid grid-cols-2 gap-3">
                 {FATOR_MAMAE_REQUIREMENTS.map(req => {
-                  const photo = draftPhotos[req.id];
+                  const photo = (activeTask.photos as any[])?.find(p => p.type === req.id);
                   return (
                     <button 
                       key={req.id} 
                       onClick={() => { setCapturingFor({id:req.id, category:'MAMAE'}); fileInputRef.current?.click(); }}
-                      className="aspect-video bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative active:scale-95 transition-all shadow-inner"
+                      className="aspect-video bg-white border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center overflow-hidden relative active:scale-95 shadow-inner"
                     >
-                      {photo?.uploading ? (
-                        <div className="flex flex-col items-center gap-2 text-blue-600 bg-blue-50 w-full h-full justify-center">
-                          <CloudUpload className="animate-bounce" size={24}/>
-                          <span className="text-[7px] font-black uppercase tracking-widest">Salvando...</span>
-                        </div>
-                      ) : photo?.url ? (
+                      {photo ? (
                         <img src={photo.url} className="w-full h-full object-cover" />
                       ) : (
                         <div className="flex flex-col items-center gap-1 text-slate-300">
@@ -308,40 +218,38 @@ const CleaningTasks: React.FC = () => {
             </section>
           </div>
 
-          {/* FOOTER FIXO E SEMPRE VISÍVEL */}
-          <div className="shrink-0 p-4 bg-white border-t border-slate-200 pb-[env(safe-area-inset-bottom,20px)] shadow-[0_-15px_40px_rgba(0,0,0,0.1)]">
+          <div className="shrink-0 p-4 bg-white border-t border-slate-200 pb-[env(safe-area-inset-bottom,20px)]">
             <button 
-              disabled={isProcessing || anyUploading || !allChecksDone}
+              disabled={isProcessing || !allChecksDone}
               onClick={handleComplete}
-              className={`w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 shadow-2xl ${allChecksDone && !anyUploading ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
+              className={`w-full py-5 rounded-2xl font-black text-lg transition-all flex items-center justify-center gap-3 uppercase tracking-widest active:scale-95 shadow-2xl ${allChecksDone ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-300'}`}
             >
-              {isProcessing ? <Loader2 className="animate-spin" /> : anyUploading ? 'AGUARDANDO UPLOADS...' : <>FINALIZAR TAREFA <ArrowRight/></>}
+              {isProcessing ? <Loader2 className="animate-spin" /> : <>FINALIZAR TAREFA <ArrowRight/></>}
             </button>
           </div>
         </div>
       )}
 
-      {/* MODAL AUDITORIA (VISTA PELO GERENTE) */}
       {auditTaskId && auditTask && (
         <div className="fixed inset-0 z-[10000] bg-white flex flex-col h-[100dvh] animate-in slide-in-from-right duration-300 overflow-hidden">
           <div className="bg-slate-900 p-6 pt-12 text-white flex justify-between items-center shrink-0 shadow-xl">
             <div>
-              <h2 className="text-3xl font-black tracking-tighter leading-none">AUDITORIA {rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
-              <p className="text-[10px] font-black text-blue-400 uppercase tracking-[0.2em] mt-2">EQUIPE: {users.find(u => u.id === auditTask.assignedTo)?.fullName}</p>
+              <h2 className="text-2xl font-black tracking-tighter">AUDITORIA {rooms.find(r => r.id === auditTask.roomId)?.number}</h2>
+              <p className="text-[10px] font-black text-blue-400 uppercase tracking-widest">Colaborador: {users.find(u => u.id === auditTask.assignedTo)?.fullName}</p>
             </div>
-            <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full active:scale-90"><X/></button>
+            <button onClick={() => setAuditTaskId(null)} className="p-2 bg-white/10 rounded-full"><X/></button>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-10 bg-slate-50 pb-20">
+          <div className="flex-1 overflow-y-auto p-4 space-y-10 bg-slate-50">
              <section className="space-y-4">
-                <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b border-slate-200 pb-2 px-1">Evidências Fator Mamãe</h3>
-                <div className="grid gap-8">
+                <h3 className="text-xs font-black uppercase text-slate-400 tracking-widest border-b border-slate-200 pb-2">Fotos do Fator Mamãe</h3>
+                <div className="grid gap-6">
                    {(auditTask.photos as any[])?.filter(p => p.category === 'MAMAE' || p.category === 'START').map((p: any, i: number) => (
-                     <div key={i} className="space-y-2 bg-white p-3 rounded-3xl shadow-sm border border-slate-100">
+                     <div key={i} className="space-y-2 bg-white p-2 rounded-2xl shadow-sm">
                         <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest px-1">
-                          {p.category === 'START' ? 'FOTO DE INÍCIO' : (FATOR_MAMAE_REQUIREMENTS.find(r => r.id === p.type)?.label || 'Foto')}
+                          {FATOR_MAMAE_REQUIREMENTS.find(r => r.id === p.type)?.label || 'Foto de Início'}
                         </p>
-                        <div className="aspect-video bg-slate-100 rounded-2xl overflow-hidden border-2 border-white shadow-inner">
-                           <img src={p.url} className="w-full h-full object-cover" loading="lazy" />
+                        <div className="aspect-video bg-slate-100 rounded-xl overflow-hidden border">
+                           <img src={p.url} className="w-full h-full object-cover" />
                         </div>
                      </div>
                    ))}
@@ -349,8 +257,8 @@ const CleaningTasks: React.FC = () => {
              </section>
           </div>
           <div className="shrink-0 p-4 flex gap-3 border-t bg-white pb-safe shadow-[0_-10px_30px_rgba(0,0,0,0.1)]">
-             <button onClick={() => approveTask(auditTask.id).then(() => setAuditTaskId(null))} className="flex-1 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 uppercase text-sm tracking-widest active:scale-95 shadow-xl transition-all"><Check/> APROVAR TAREFA</button>
-             <button onClick={() => setAuditTaskId(null)} className="px-6 py-5 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px] active:scale-95">VOLTAR</button>
+             <button onClick={() => approveTask(auditTask.id).then(() => setAuditTaskId(null))} className="flex-1 py-5 bg-emerald-600 text-white font-black rounded-2xl flex items-center justify-center gap-2 uppercase text-sm tracking-widest active:scale-95 shadow-xl transition-all"><Check/> APROVAR</button>
+             <button onClick={() => setAuditTaskId(null)} className="px-6 py-5 bg-slate-100 text-slate-500 font-black rounded-2xl uppercase text-[10px]">VOLTAR</button>
           </div>
         </div>
       )}

@@ -9,11 +9,12 @@ const LaundryKanban: React.FC = () => {
   const [showAdd, setShowAdd] = useState(false);
   const [newItem, setNewItem] = useState({ type: 'Lençol', quantity: 1, stage: LaundryStage.SUJO, roomOrigin: '' });
 
+  // FIX: Changed icon property to hold the component reference (Icon) instead of a rendered element
   const stages = [
-    { id: LaundryStage.SUJO, label: 'Sujo', icon: <Trash2 size={18} />, color: 'bg-rose-50 text-rose-700 border-rose-100' },
-    { id: LaundryStage.LAVANDO, label: 'Lavando', icon: <Droplets size={18} />, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-    { id: LaundryStage.SECANDO, label: 'Secando', icon: <Wind size={18} />, color: 'bg-amber-50 text-amber-700 border-amber-100' },
-    { id: LaundryStage.GUARDADO, label: 'Guardado', icon: <Warehouse size={18} />, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
+    { id: LaundryStage.SUJO, label: 'Sujo', Icon: Trash2, color: 'bg-rose-50 text-rose-700 border-rose-100' },
+    { id: LaundryStage.LAVANDO, label: 'Lavando', Icon: Droplets, color: 'bg-blue-50 text-blue-700 border-blue-100' },
+    { id: LaundryStage.SECANDO, label: 'Secando', Icon: Wind, color: 'bg-amber-50 text-amber-700 border-amber-100' },
+    { id: LaundryStage.GUARDADO, label: 'Guardado', Icon: Warehouse, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
   ];
 
   const handleAdd = (e: React.FormEvent) => {
@@ -50,8 +51,9 @@ const LaundryKanban: React.FC = () => {
       <div className="flex-1 flex gap-4 overflow-x-auto px-2 pb-6 snap-x snap-mandatory no-scrollbar custom-scrollbar">
         {stages.map(stage => (
           <div key={stage.id} className="flex flex-col h-full min-w-[280px] w-[85vw] md:w-[280px] md:min-w-0 bg-slate-50/50 rounded-3xl border border-slate-200 p-3 snap-center">
+            {/* FIX: Use stage.Icon as a component tag */}
             <div className={`flex items-center gap-2 px-4 py-2 rounded-2xl font-black text-[10px] uppercase tracking-widest mb-4 border ${stage.color}`}>
-              {stage.icon}
+              <stage.Icon size={18} />
               {stage.label}
               <span className="ml-auto bg-white/50 px-2 py-0.5 rounded-lg">
                 {safeLaundry.filter(l => l.stage === stage.id).length}
@@ -75,7 +77,8 @@ const LaundryKanban: React.FC = () => {
               ))}
               {safeLaundry.filter(l => l.stage === stage.id).length === 0 && (
                 <div className="flex flex-col items-center justify-center py-12 text-slate-200">
-                  <stage.icon size={32} />
+                  {/* FIX: Use stage.Icon as a component tag with specified size */}
+                  <stage.Icon size={32} />
                   <p className="text-[10px] font-black uppercase mt-2">Vazio</p>
                 </div>
               )}

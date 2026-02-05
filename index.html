@@ -10,13 +10,7 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      // Shim de segurança robusto para o ambiente
-      if (typeof window.process === 'undefined') {
-        window.process = { env: {} };
-      } else if (typeof window.process.env === 'undefined') {
-        window.process.env = {};
-      }
-      
+      window.process = { env: {} };
       tailwind.config = {
         theme: {
           extend: {
